@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Az-Ambulance UI</title>
+  <style>
+    * { box-sizing:border-box; margin:0; padding:0; font-family:Arial, sans-serif; }
+    body { background:transparent; overflow:hidden; color:#fff; }
+        .hidden { display:none !important; }
+
+    /* HUD (top-left) */
+    #hud {
+      position:fixed;
+      left:20px;
+      top:80px;
+      width:260px;
+      padding:8px 10px;
+      background:rgba(0,0,0,0.75);
+      border-radius:6px;
+      font-size:12px;
+    }
+    #hud h1 {
+      font-size:14px;
+      margin-bottom:4px;
+      border-bottom:1px solid rgba(255,255,255,0.15);
+      padding-bottom:3px;
+    }
+    #hud .row {
+      display:flex;
+      justify-content:space-between;
+      margin-top:1px;
+    }
+    #hud .label { color:#ccc; }
+    #hud .value { font-weight:bold; }
+
+    /* Notifications */
+    #notifications {
+      position:fixed;
+      top:40px;
+      right:30px;
+      width:320px;
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+      pointer-events:none;
+    }
+    .toast {
+      background:rgba(0,0,0,0.85);
+      padding:6px 8px;
+      border-radius:4px;
+      font-size:11px;
+      border-left:3px solid #58a6ff;
+    }
+    .toast.info { border-color:#58a6ff; }
+    .toast.warning { border-color:#ffd966; }
+    .toast.error { border-color:#ff4b4b; }
+    .toast.success { border-color:#5bff8a; }
+
+    /* Call popup */
+    #call-popup {
+      position:fixed;
+      top:30%;
+      left:50%;
+      transform:translate(-50%,-50%);
+      width:360px;
+      padding:14px 16px;
+      border-radius:8px;
+      background:rgba(0,0,0,0.95);
+      box-shadow:0 0 16px rgba(0,0,0,0.8);
+      font-size:12px;
+    }
+    #call-popup h2 { font-size:15px; margin-bottom:6px; }
+    #call-popup p  { margin-bottom:6px; }
+    .btn-row {
+      display:flex;
+      justify-content:flex-end;
+      gap:6px;
+      margin-top:8px;
+    }
+    .btn {
+      padding:6px 10px;
+      border:none;
+      border-radius:4px;
+      font-size:12px;
+      cursor:pointer;
+    }
+    .btn-primary { background:#5bff8a; color:#000; }
+    .btn-secondary { background:#555; color:#fff; }
+
+    /* CPR / Assessment / EMS actions overlays */
+    #cpr-modal, #assessment-modal, #ems-actions-overlay {
+      position:fixed;
+      top:0; left:0;
+      width:100%; height:100%;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background:rgba(0,0,0,0.4);
+    }
+
+    .modal-content {
+      width:380px;
+      padding:16px 18px;
+      background:rgba(0,0,0,0.96);
+      border-radius:8px;
+      box-shadow:0 0 18px rgba(0,0,0,0.85);
+      font-size:12px;
+    }
+    .modal-content h2 { font-size:16px; margin-bottom:8px; }
+    .modal-content p  { margin-bottom:8px; }
+
+    #cpr-progress {
+      width:100%;
+      height:8px;
+      border-radius:4px;
+      background:rgba(255,255,255,0.1);
+      overflow:hidden;
+      margin-top:6px;
+    }
+    #cpr-progress-inner {
+      width:0%;
+      height:100%;
+      background:linear-gradient(90deg,#5bff8a,#58a6ff);
+    }
+    #cpr-rate {
+      margin-top:6px;
+      font-size:11px;
+      opacity:0.85;
+    }
+
+    table {
+      width:100%;
+      border-collapse:collapse;
+      margin-top:6px;
+    }
+    th, td {
+      border:1px solid rgba(255,255,255,0.1);
+      padding:4px 6px;
+      font-size:11px;
+      text-align:left;
+    }
+    th {
+      background:rgba(255,255,255,0.05);
+    }
+
+    /* EMS Actions (ALT menu) */
+    #ems-actions-overlay.hidden { display:none; }
+
+    #ems-actions-card {
+      width:320px;
+      max-width:90vw;
+      background:rgba(5,8,15,0.97);
+      border-radius:10px;
+      border:1px solid rgba(120,150,255,0.45);
+      box-shadow:0 18px 40px rgba(0,0,0,0.85);
+      padding:10px 12px;
+      font-size:12px;
+    }
+    #ems-actions-header {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      margin-bottom:6px;
+      border-bottom:1px solid rgba(255,255,255,0.06);
+      padding-bottom:4px;
+    }
+    #ems-actions-header span {
+      font-weight:bold;
+      letter-spacing:0.04em;
+    }
+    #ems-actions-close {
+      border:none;
+      background:transparent;
+      color:#ccc;
+      font-size:11px;
+      cursor:pointer;
+    }
+    .ems-section {
+      margin-top:6px;
+    }
+    .ems-section-title {
+      font-size:11px;
+      text-transform:uppercase;
+      letter-spacing:0.08em;
+      color:#9aa4c3;
+      margin-bottom:3px;
+    }
+    .ems-btn {
+      width:100%;
+      text-align:left;
+      border:none;
+      border-radius:5px;
+      padding:5px 6px;
+      margin-bottom:3px;
+      cursor:pointer;
+      background:rgba(18,22,35,0.95);
+      color:#f5f5f5;
+      font-size:12px;
+    }
+    .ems-btn:hover {
+      background:rgba(60,90,180,0.95);
+    }
+    #ems-actions-footer {
+      margin-top:6px;
+      border-top:1px solid rgba(255,255,255,0.06);
+      padding-top:4px;
+      font-size:10px;
+      color:#9aa4c3;
+      text-align:right;
+    }
+  </style>
+</head>
+<body>
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <h1>EMS STATUS</h1>
+    <div class="row"><span class="label">Unit</span><span class="value" id="hud-unit">-</span></div>
+    <div class="row"><span class="label">Status</span><span class="value" id="hud-status">AVAILABLE</span></div>
+    <div class="row"><span class="label">Call</span><span class="value" id="hud-callid">None</span></div>
+    <div class="row"><span class="label">Type</span><span class="value" id="hud-calltype">-</span></div>
+    <div class="row"><span class="label">Location</span><span class="value" id="hud-location">-</span></div>
+  </div>
+
+  <!-- Notifications -->
+  <div id="notifications"></div>
+
+  <!-- Call popup -->
+  <div id="call-popup" class="hidden">
+    <h2 id="call-title">New EMS Call</h2>
+    <p id="call-body"></p>
+    <p id="call-extra" style="font-size:11px;opacity:0.85;"></p>
+    <div class="btn-row">
+      <button id="btn-dismiss" class="btn btn-secondary">Ignore (X)</button>
+      <button id="btn-accept" class="btn btn-primary">Accept (E)</button>
+    </div>
+  </div>
+
+  <!-- CPR mini-game -->
+  <div id="cpr-modal" class="hidden">
+    <div class="modal-content">
+      <h2>CPR</h2>
+      <p>Click or press SPACE in time with high-quality CPR (100–120 bpm). Keep compressions steady!</p>
+      <p style="font-size:11px;opacity:0.9;">Good window: 0.45–0.6 seconds between compressions.</p>
+      <div id="cpr-progress"><div id="cpr-progress-inner"></div></div>
+      <div id="cpr-rate">Waiting for first compression...</div>
+      <div class="btn-row">
+        <button id="btn-cpr-cancel" class="btn btn-secondary">Stop</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Assessment modal -->
+  <div id="assessment-modal" class="hidden">
+    <div class="modal-content">
+      <h2>Patient Assessment</h2>
+      <p id="assess-desc"></p>
+      <table>
+        <tbody id="assess-table"></tbody>
+      </table>
+      <div class="btn-row">
+        <button id="btn-assess-close" class="btn btn-primary">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- EMS Actions (ALT menu) -->
+  <div id="ems-actions-overlay" class="hidden">
+    <div id="ems-actions-card">
+      <div id="ems-actions-header">
+        <span>EMS Actions</span>
+        <button id="ems-actions-close">Close</button>
+      </div>
+      <div class="ems-section">
+        <div class="ems-section-title">Patient</div>
+        <button class="ems-btn" data-cmd="ems_assess">Assess patient (/ems_assess)</button>
+        <button class="ems-btn" data-cmd="ems_cpr">Start CPR (/ems_cpr)</button>
+      </div>
+      <div class="ems-section">
+        <div class="ems-section-title">Transport</div>
+        <button class="ems-btn" data-cmd="ems_stretcher">Spawn stretcher (/ems_stretcher)</button>
+        <button class="ems-btn" data-cmd="ems_loadpatient">Load patient onto stretcher (/ems_loadpatient)</button>
+        <button class="ems-btn" data-cmd="ems_load">Load stretcher into ambulance (/ems_load)</button>
+      </div>
+      <div class="ems-section">
+        <div class="ems-section-title">Status</div>
+        <button class="ems-btn" data-cmd="ems_status AVAILABLE">Status: AVAILABLE</button>
+        <button class="ems-btn" data-cmd="ems_status ONSCENE">Status: ONSCENE</button>
+        <button class="ems-btn" data-cmd="ems_status TRANSPORT">Status: TRANSPORT</button>
+        <button class="ems-btn" data-cmd="ems_status HOSPITAL">Status: HOSPITAL</button>
+      </div>
+      <div id="ems-actions-footer">
+        Hold / tap ALT to open • Az-Ambulance
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const hud          = document.getElementById('hud');
+    const hudUnit      = document.getElementById('hud-unit');
+    const hudStatus    = document.getElementById('hud-status');
+    const hudCallId    = document.getElementById('hud-callid');
+    const hudCallType  = document.getElementById('hud-calltype');
+    const hudLocation  = document.getElementById('hud-location');
+
+    const notifications = document.getElementById('notifications');
+
+    const callPopup  = document.getElementById('call-popup');
+    const callTitle  = document.getElementById('call-title');
+    const callBody   = document.getElementById('call-body');
+    const callExtra  = document.getElementById('call-extra');
+    const btnAccept  = document.getElementById('btn-accept');
+    const btnDismiss = document.getElementById('btn-dismiss');
+
+    const cprModal    = document.getElementById('cpr-modal');
+    const cprProgress = document.getElementById('cpr-progress-inner');
+    const cprRate     = document.getElementById('cpr-rate');
+    const btnCprCancel = document.getElementById('btn-cpr-cancel');
+
+    const assessModal = document.getElementById('assessment-modal');
+    const assessDesc  = document.getElementById('assess-desc');
+    const assessTable = document.getElementById('assess-table');
+    const btnAssessClose = document.getElementById('btn-assess-close');
+
+    const emsOverlay  = document.getElementById('ems-actions-overlay');
+    const emsCloseBtn = document.getElementById('ems-actions-close');
+
+    let pendingCall = null;
+
+    function nui(event, data) {
+      fetch('https://Az-Ambulance/' + event, {
+        method:'POST',
+        headers:{'Content-Type':'application/json; charset=UTF-8'},
+        body:JSON.stringify(data || {})
+      }).catch(() => {});
+    }
+
+    function showToast(kind, text, durationMs) {
+      const div = document.createElement('div');
+      div.className = 'toast ' + (kind || 'info');
+      div.textContent = text || '';
+      notifications.appendChild(div);
+      const ms = durationMs || 4000;
+      setTimeout(() => {
+        if (div.parentNode) div.parentNode.removeChild(div);
+      }, ms);
+    }
+
+    function updateHUDMsg(data) {
+      if (!data.onDuty) {
+        hud.classList.add('hidden');
+        return;
+      }
+      hud.classList.remove('hidden');
+      hudUnit.textContent   = 'Unit ' + (data.unit || '');
+      hudStatus.textContent = data.status || 'AVAILABLE';
+
+      if (data.callInfo) {
+        hudCallId.textContent   = '#' + data.callInfo.id;
+        hudCallType.textContent = data.callInfo.type || '-';
+        hudLocation.textContent = data.callInfo.address || '-';
+      } else {
+        hudCallId.textContent   = 'None';
+        hudCallType.textContent = '-';
+        hudLocation.textContent = '-';
+      }
+    }
+
+    /* call popup buttons */
+    btnAccept.addEventListener('click', function () {
+      if (!pendingCall) return;
+      nui('accept_call', {id: pendingCall.id});
+    });
+
+    btnDismiss.addEventListener('click', function () {
+      pendingCall = null;
+      callPopup.classList.add('hidden');
+      nui('dismiss_call', {});
+    });
+
+    /* CPR mini-game */
+    let cprRunning    = false;
+    let cprStartTime  = 0;
+    let cprDuration   = 0;
+    let cprGoodMin    = 450;
+    let cprGoodMax    = 600;
+    let cprTimer      = null;
+    let lastPressTime = null;
+    let totalPress    = 0;
+    let goodPress     = 0;
+
+    function registerCompression() {
+      if (!cprRunning) return;
+      const now = performance.now();
+      if (lastPressTime !== null) {
+        const diff = now - lastPressTime;
+        if (diff >= cprGoodMin && diff <= cprGoodMax) {
+          goodPress++;
+          cprRate.textContent = 'Good! ' + diff.toFixed(0) + ' ms between compressions.';
+        } else {
+          cprRate.textContent = 'Off rhythm (' + diff.toFixed(0) + ' ms). Aim for 0.45–0.6 s.';
+        }
+      } else {
+        cprRate.textContent = 'Keep that rhythm going...';
+      }
+      lastPressTime = now;
+      totalPress++;
+    }
+
+    cprModal.addEventListener('mousedown', function () {
+      registerCompression();
+    });
+
+    window.addEventListener('keydown', function (e) {
+      if (!cprModal.classList.contains('hidden') && e.code === 'Space') {
+        registerCompression();
+      }
+    });
+
+    btnCprCancel.addEventListener('click', function () {
+      if (!cprRunning) return;
+      cprRunning = false;
+      cprModal.classList.add('hidden');
+      if (cprTimer) { clearInterval(cprTimer); cprTimer = null; }
+      nui('cpr_cancel', {});
+    });
+
+    function startCPRUI(data) {
+      cprDuration  = (data.duration || 30) * 1000;
+      cprGoodMin   = data.goodMinMs || 450;
+      cprGoodMax   = data.goodMaxMs || 600;
+      cprRunning   = true;
+      cprStartTime = performance.now();
+      lastPressTime = null;
+      totalPress   = 0;
+      goodPress    = 0;
+      cprProgress.style.width = '0%';
+      cprRate.textContent = 'Start compressions – click or press SPACE.';
+      cprModal.classList.remove('hidden');
+
+      if (cprTimer) clearInterval(cprTimer);
+      cprTimer = setInterval(() => {
+        const now = performance.now();
+        const elapsed = now - cprStartTime;
+        const pct = Math.min(100, (elapsed / cprDuration) * 100);
+        cprProgress.style.width = pct + '%';
+        if (elapsed >= cprDuration) {
+          cprRunning = false;
+          cprModal.classList.add('hidden');
+          clearInterval(cprTimer);
+          cprTimer = null;
+          nui('cpr_finish', {good: goodPress, total: totalPress});
+        }
+      }, 50);
+    }
+
+    /* Assessment */
+    btnAssessClose.addEventListener('click', function () {
+      assessModal.classList.add('hidden');
+      nui('assessment_close', {});
+    });
+
+    function openAssessment(vitals) {
+      assessTable.innerHTML = '';
+      assessDesc.textContent = vitals.description || '';
+      function row(label, value) {
+        const tr = document.createElement('tr');
+        const td1 = document.createElement('td');
+        const td2 = document.createElement('td');
+        td1.textContent = label;
+        td2.textContent = value;
+        tr.appendChild(td1); tr.appendChild(td2);
+        assessTable.appendChild(tr);
+      }
+      row('Heart rate', (vitals.heartRate || '?') + ' bpm');
+      row('Blood pressure', (vitals.systolic || '?') + '/' + (vitals.diastolic || '?') + ' mmHg');
+      row('Respiratory rate', (vitals.respRate || '?') + ' /min');
+      row('SpO2', (vitals.spo2 || '?') + ' %');
+      row('GCS', vitals.gcs || '?');
+      row('State', vitals.state || '?');
+      assessModal.classList.remove('hidden');
+    }
+
+    /* EMS Actions helpers */
+    function openEMSMenu() {
+      emsOverlay.classList.remove('hidden');
+    }
+    function closeEMSMenu() {
+      emsOverlay.classList.add('hidden');
+    }
+
+    emsCloseBtn.addEventListener('click', function () {
+      closeEMSMenu();
+      nui('ems_actions_close', {});
+    });
+
+    document.querySelectorAll('.ems-btn').forEach(btn => {
+      btn.addEventListener('click', function () {
+        const cmd = this.getAttribute('data-cmd');
+        if (!cmd) return;
+        fetch('https://Az-Ambulance/ems_action', {
+          method:'POST',
+          headers:{'Content-Type':'application/json; charset=UTF-8'},
+          body:JSON.stringify({cmd: cmd})
+        }).catch(() => {});
+        closeEMSMenu();
+      });
+    });
+
+    /* message handler from Lua */
+    window.addEventListener('message', function (event) {
+      const data = event.data || {};
+      switch (data.action) {
+        case 'hud_update':
+          updateHUDMsg(data);
+          break;
+        case 'hud_hide':
+          hud.classList.add('hidden');
+          break;
+        case 'notify':
+          showToast(data.kind || 'info', data.text || '', data.duration);
+          break;
+        case 'call_popup':
+          pendingCall = data.call;
+          if (!pendingCall) return;
+          callTitle.textContent = data.call.title || 'New EMS Call';
+          callBody.textContent  = data.call.details || '';
+          callExtra.textContent = 'Call #' + data.call.id + ' | ' + (data.call.address || '');
+          callPopup.classList.remove('hidden');
+          break;
+        case 'call_popup_hide':
+          pendingCall = null;
+          callPopup.classList.add('hidden');
+          break;
+        case 'cpr_start':
+          startCPRUI(data);
+          break;
+        case 'assessment_open':
+          openAssessment(data.vitals || {});
+          break;
+        case 'assessment_close':
+          assessModal.classList.add('hidden');
+          break;
+        case 'ems_actions_open':
+          openEMSMenu();
+          break;
+        case 'ems_actions_close':
+          closeEMSMenu();
+          break;
+      }
+    });
+    $('#btnDeny').on('click', function () {
+        $.post('https://Az-Ambulance/deny_call', JSON.stringify({ id: currentCall.id }));
+    });
+
+    /* initial hide */
+    hud.classList.add('hidden');
+    callPopup.classList.add('hidden');
+    cprModal.classList.add('hidden');
+    assessModal.classList.add('hidden');
+    emsOverlay.classList.add('hidden');
+  </script>
+</body>
+</html>
