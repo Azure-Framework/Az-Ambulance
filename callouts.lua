@@ -1,3 +1,5 @@
+-- Az-Ambulance / callouts.lua
+-- All scene-spawn logic for EMS callouts lives here so it’s easy to tweak.
 
 AzCallouts = AzCallouts or {}
 local AC = AzCallouts
@@ -44,25 +46,6 @@ function AC.GetScenePeds(callId)
     return {}
 end
 
-
-local function getRoadPositionAround(coords)
-    -- coords is expected to be a table with x,y,z (from call.coords)
-    local x, y, z = coords.x, coords.y, coords.z
-
-    -- FiveM native: returns ok, vector3
-    local ok, outPos = GetClosestVehicleNode(x, y, z, false, 3.0, 0)
-    if ok and outPos then
-        return outPos -- already a vector3
-    end
-
-    -- fallback: snap to ground
-    local found, gz = GetGroundZFor_3dCoord(x, y, z + 10.0, false)
-    if found then
-        z = gz
-    end
-    return vector3(x, y, z)
-end
-
 local function offsetFromHeading(origin, headingDeg, forwardDist, sideDist)
     local h  = math.rad(headingDeg)
     local fx = math.sin(h)
@@ -73,6 +56,25 @@ local function offsetFromHeading(origin, headingDeg, forwardDist, sideDist)
     local x = origin.x + fx * forwardDist + sx * sideDist
     local y = origin.y + fy * forwardDist + sy * sideDist
     return vector3(x, y, origin.z)
+end
+
+local function getRoadPositionAround(coords)
+    local x, y, z = coords.x, coords.y, coords.z
+
+    local ok, outPos = GetClosestVehicleNode(x, y, z, false, 3.0, 0)
+    if ok and outPos then
+        -- subtle shift so patient isn't always dead-center of the node
+        local heading = coords.heading or 0.0
+        local fwd  = math.random(0, 8)
+        local side = math.random(-4, 4)
+        return offsetFromHeading(outPos, heading, fwd, side)
+    end
+
+    local found, gz = GetGroundZFor_3dCoord(x, y, z + 10.0, false)
+    if found then
+        z = gz
+    end
+    return vector3(x, y, z)
 end
 
 local function chooseRandom(list, defaultVal)
@@ -162,7 +164,6 @@ end
 -- scene builders per call-type
 ---------------------------------------------------------------------
 
--- simple 1-patient on the ground
 local function spawnSimpleSinglePatient(call)
     local callId  = call.id
     local basePos = getRoadPositionAround(call.coords)
@@ -171,12 +172,10 @@ local function spawnSimpleSinglePatient(call)
     return netId
 end
 
--- MVC with 1–N vehicles and 1–M peds
 local function spawnMVCScene(call, vehMin, vehMax, pedMin, pedMax)
     local callId = call.id
     local center = getRoadPositionAround(call.coords)
 
-    -- heading along the road (and optionally refine center)
     local ok, nodePos, nodeHeading = GetClosestVehicleNodeWithHeading(
         center.x, center.y, center.z, false, 3.0, 0
     )
@@ -187,12 +186,11 @@ local function spawnMVCScene(call, vehMin, vehMax, pedMin, pedMax)
         if nodeHeading then heading = nodeHeading end
     end
 
-    -- vehicles
     local vehCount = math.random(vehMin, vehMax)
     local vehs     = {}
 
     for i = 1, vehCount do
-        local fwdOffset = (i - ((vehCount + 1) / 2)) * 6.0  -- 6m between cars
+        local fwdOffset = (i - ((vehCount + 1) / 2)) * 6.0
         local vehPos    = offsetFromHeading(center, heading, fwdOffset, 0.0)
         local veh       = spawnMVCVehicle(callId, vehPos, heading)
         if veh then
@@ -200,7 +198,6 @@ local function spawnMVCScene(call, vehMin, vehMax, pedMin, pedMax)
         end
     end
 
-    -- peds (1–4) around the vehicles
     local pedCount     = math.random(pedMin, pedMax)
     local primaryNetId = nil
 
@@ -228,7 +225,6 @@ end
 -- public API
 ---------------------------------------------------------------------
 
--- decide what to spawn for this call.type and return the "main" patient netId
 function AC.SpawnForCallType(call)
     if not call or not call.coords or not call.id then return nil end
 
@@ -238,20 +234,15 @@ function AC.SpawnForCallType(call)
         return spawnSimpleSinglePatient(call)
 
     elseif t == 'MVA_MINOR' then
-        -- 1–2 cars, 1–3 peds
         return spawnMVCScene(call, 1, 2, 1, 3)
 
     elseif t == 'MVA_MAJOR' then
-        -- 2–3 cars, 2–4 peds
         return spawnMVCScene(call, 2, 3, 2, 4)
 
     elseif t == 'CARDIAC' then
         return spawnSimpleSinglePatient(call)
 
     else
-        -- fallback: simple single patient
         return spawnSimpleSinglePatient(call)
     end
 end
-
-

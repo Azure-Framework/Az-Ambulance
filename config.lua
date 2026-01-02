@@ -1,6 +1,6 @@
 Config = {}
 
-
+-- config.lua
 Config.EMSJobs = {
     ['police'] = true,
     ['ems']       = true,
@@ -26,6 +26,13 @@ Config.CalloutsEnabled      = true
 Config.CalloutIntervalMin   = 1 * 60 * 1000  -- 5 minutes
 Config.CalloutIntervalMax   = 1 * 60 * 1000 -- 15 minutes
 Config.MaxSimultaneousCalls = 3
+
+
+-- How far away AI/system callouts should spawn from on-duty EMS
+Config.CalloutMinDistance = 500.0     -- meters (try 600-1200)
+Config.CalloutMaxDistance = 750.0    -- optional cap if you use random radius logic
+Config.CalloutPickAttempts = 25
+
 
 -- Blip + distance settings
 Config.CallBlipSprite   = 153

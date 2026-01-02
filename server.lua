@@ -1,10 +1,27 @@
+-- Az-Ambulance / server.lua
 
 local Config = Config or {}
+local fw = exports['Az-Framework']
+
+Config.Payments = Config.Payments or {
+    Enabled = true,
+
+    TransportBaseByType = {
+        DRUNK     = 150,
+        MVA       = 220,
+        MVA_MINOR = 200,
+        MVA_MAJOR = 350,
+        GSW       = 400,
+        CARDIAC   = 500,
+    },
+
+    DefaultTransportPay = 200,
+    CPRBonus = 150,
+}
 
 ---------------------------------------------------------------------
 -- DEBUG
 ---------------------------------------------------------------------
-
 local EMS_DEBUG = true
 
 local function sdebug(...)
@@ -15,7 +32,6 @@ end
 ---------------------------------------------------------------------
 -- CONFIG FALLBACKS
 ---------------------------------------------------------------------
-
 Config.GetPlayerJob = Config.GetPlayerJob or function(source)
     local job = exports['Az-Framework']:getPlayerJob(source)
     return job and string.lower(job) or 'civ'
@@ -36,31 +52,57 @@ Config.CPRDurationSeconds = Config.CPRDurationSeconds or 30
 Config.CPRGoodMinMs       = Config.CPRGoodMinMs       or 450
 Config.CPRGoodMaxMs       = Config.CPRGoodMaxMs       or 600
 
--- Callout behaviour (fallbacks – you override in config.lua)
 Config.CalloutsEnabled      = (Config.CalloutsEnabled ~= false)
 Config.CalloutIntervalMin   = Config.CalloutIntervalMin   or (5 * 60 * 1000)
 Config.CalloutIntervalMax   = Config.CalloutIntervalMax   or (15 * 60 * 1000)
 Config.MaxSimultaneousCalls = Config.MaxSimultaneousCalls or 3
 
+-- ✅ NEW: distance control for RANDOM/system callouts
+Config.CalloutMinDistance   = Config.CalloutMinDistance or 800.0
+Config.CalloutMaxDistance   = Config.CalloutMaxDistance or 3500.0
+Config.CalloutPickAttempts  = Config.CalloutPickAttempts or 25
+
+-- Optional curated points (vector4s or tables)
+-- Config.CalloutPoints = Config.CalloutPoints or {
+--     vector4(296.5, -584.9, 43.2, 90.0),
+-- }
+
+Config.CardiacCPRRequiredQuality = Config.CardiacCPRRequiredQuality or 60
+
 ---------------------------------------------------------------------
 -- STATE
 ---------------------------------------------------------------------
-
-local emsDuty     = {}   -- [src] = true/false
-local activeCalls = {}   -- [callId] = call table
+local emsDuty     = {}
+local activeCalls = {}
 local nextCallId  = 1
 
 ---------------------------------------------------------------------
 -- UTIL
 ---------------------------------------------------------------------
+local function allowedJob(source)
+    if source == 0 then return true end
 
-local function isEMS(source)
     local job = Config.GetPlayerJob(source)
     local j   = job and string.lower(job) or 'civ'
     local ok  = Config.EMSJobs[j] == true
-    sdebug('isEMS src='..tostring(source)..' job='..tostring(j)..' -> '..tostring(ok))
+    sdebug('allowedJob src='..tostring(source)..' job='..tostring(j)..' -> '..tostring(ok))
     return ok
 end
+
+local function syncJobAllowed(src)
+    local ok = allowedJob(src)
+    TriggerClientEvent('az_ambulance:setJobAllowed', src, ok)
+
+    sdebug(('syncJobAllowed -> src=%s job=%s ok=%s'):format(
+        tostring(src),
+        tostring(Config.GetPlayerJob(src)),
+        tostring(ok)
+    ))
+end
+
+RegisterNetEvent('az_ambulance:requestJobAllowed', function()
+    syncJobAllowed(source)
+end)
 
 local function sendNotify(src, kind, text, durationMs)
     TriggerClientEvent('az_ambulance:notify', src, {
@@ -73,9 +115,7 @@ end
 
 local function hasAssignedCall(src)
     for _, call in pairs(activeCalls) do
-        if call.assigned == src then
-            return true
-        end
+        if call.assigned == src then return true end
     end
     return false
 end
@@ -94,7 +134,7 @@ local function getRandomEMS()
 end
 
 local function hasOnDutyEMS()
-    for src, on in pairs(emsDuty) do
+    for _, on in pairs(emsDuty) do
         if on then return true end
     end
     return false
@@ -102,9 +142,7 @@ end
 
 local function countActiveCalls()
     local n = 0
-    for _, _ in pairs(activeCalls) do
-        n = n + 1
-    end
+    for _, _ in pairs(activeCalls) do n = n + 1 end
     return n
 end
 
@@ -142,9 +180,150 @@ local function makeRandomVitals(templateType)
 end
 
 ---------------------------------------------------------------------
--- CIVILIAN /ems CALLOUTS
+-- ✅ DISTANCE-BASED RANDOM CALLOUT COORD PICKER
 ---------------------------------------------------------------------
+local function getOnDutyEMSCoords()
+    local coords = {}
+    for src, on in pairs(emsDuty) do
+        if on then
+            local ped = GetPlayerPed(src)
+            if ped and ped ~= 0 then
+                coords[#coords+1] = GetEntityCoords(ped)
+            end
+        end
+    end
+    return coords
+end
 
+local function isFarEnoughFromAllEMS(testPos, minDist)
+    local emsList = getOnDutyEMSCoords()
+    if #emsList == 0 then return true end
+
+    for _, c in ipairs(emsList) do
+        if #(testPos - c) < minDist then
+            return false
+        end
+    end
+    return true
+end
+
+local function unpackCalloutPoint(p)
+    -- supports vector4 or table {x,y,z,heading}
+    if type(p) == 'vector4' then
+        return { x = p.x, y = p.y, z = p.z, heading = p.w or 0.0 }
+    end
+    if type(p) == 'table' then
+        return { x = p.x, y = p.y, z = p.z, heading = p.heading or p.w or 0.0 }
+    end
+    return nil
+end
+
+local function pickFromConfiguredPoints()
+    local pts = Config.CalloutPoints or {}
+    if #pts == 0 then return nil end
+
+    local minDist = Config.CalloutMinDistance or 800.0
+    local tries   = Config.CalloutPickAttempts or 25
+
+    for _ = 1, tries do
+        local raw = pts[math.random(1, #pts)]
+        local p   = unpackCalloutPoint(raw)
+        if p then
+            local pos = vector3(p.x, p.y, p.z)
+            if isFarEnoughFromAllEMS(pos, minDist) then
+                return p
+            end
+        end
+    end
+
+    -- fallback any point
+    local raw = pts[math.random(1, #pts)]
+    return unpackCalloutPoint(raw)
+end
+-- Server-safe: no road-node natives here.
+local function pickRandomFarPoint()
+    local minDist = Config.CalloutMinDistance or 800.0
+    local maxDist = Config.CalloutMaxDistance or 3500.0
+    local tries   = Config.CalloutPickAttempts or 25
+
+    -- anchor around a random on-duty EMS if available; otherwise city-ish center
+    local anchor = vector3(215.0, -810.0, 30.0)
+    local emsList = getOnDutyEMSCoords()
+    if #emsList > 0 then
+        anchor = emsList[math.random(1, #emsList)]
+    end
+
+    -- try to find a spot far enough from all on-duty EMS
+    for _ = 1, tries do
+        local angle  = math.random() * math.pi * 2
+        local radius = minDist + (math.random() * (maxDist - minDist))
+
+        local x = anchor.x + math.cos(angle) * radius
+        local y = anchor.y + math.sin(angle) * radius
+        local z = anchor.z
+
+        local pos = vector3(x, y, z)
+
+        if isFarEnoughFromAllEMS(pos, minDist) then
+            return {
+                x = x,
+                y = y,
+                z = z,
+                heading = math.random(0, 359) + 0.0
+            }
+        end
+    end
+
+    -- fallback: return a deterministic far-ish offset
+    local angle  = math.random() * math.pi * 2
+    local radius = minDist + ((maxDist - minDist) * 0.5)
+
+    return {
+        x = anchor.x + math.cos(angle) * radius,
+        y = anchor.y + math.sin(angle) * radius,
+        z = anchor.z,
+        heading = 0.0
+    }
+end
+
+
+local function pickRandomCallCoords()
+    -- Prefer curated points if you add them
+    local p = pickFromConfiguredPoints()
+    if p then return p end
+
+    -- Server-safe random far point
+    return pickRandomFarPoint()
+end
+
+
+---------------------------------------------------------------------
+-- PATIENT NET REGISTRATION (so client call won't fail)
+---------------------------------------------------------------------
+RegisterNetEvent('az_ambulance:registerPatientNet', function(callId, netId)
+    local src = source
+    if not allowedJob(src) then return end
+
+    callId = tonumber(callId)
+    netId  = tonumber(netId) or 0
+    if not callId then return end
+
+    local call = activeCalls[callId]
+    if not call then
+        sdebug('registerPatientNet -> no call for id='..tostring(callId))
+        return
+    end
+
+    call.patientNetId = netId
+    sdebug(('registerPatientNet -> callId=%s netId=%s'):format(tostring(callId), tostring(netId)))
+
+    TriggerClientEvent('az_ambulance:updateCallPatient', -1, callId, netId)
+end)
+
+---------------------------------------------------------------------
+-- USER /ems CALLOUTS (kept as-is for your design)
+-- NOTE: your client command /ems is already EMS-gated.
+---------------------------------------------------------------------
 local function normaliseUserCallType(t)
     t = (t or ''):upper()
 
@@ -163,7 +342,6 @@ end
 local function createUserEMSCall(src, rawType, description)
     if src == 0 then return end
 
-    -- must have at least one EMS on duty
     if not hasOnDutyEMS() then
         sendNotify(src, 'error', 'No EMS units are currently on duty.', 6000)
         return
@@ -177,10 +355,7 @@ local function createUserEMSCall(src, rawType, description)
     end
 
     local ped = GetPlayerPed(src)
-    if not ped or ped == 0 then
-        sdebug('createUserEMSCall -> GetPlayerPed failed for src='..tostring(src))
-        return
-    end
+    if not ped or ped == 0 then return end
 
     local x, y, z = table.unpack(GetEntityCoords(ped))
 
@@ -188,15 +363,13 @@ local function createUserEMSCall(src, rawType, description)
     local callId = nextCallId
     nextCallId   = nextCallId + 1
 
-    local coords = { x = x, y = y, z = z }
-
     local call = {
         id           = callId,
         type         = callType,
         title        = title,
         details      = description or '',
         address      = 'Unknown address',
-        coords       = coords,
+        coords       = { x = x, y = y, z = z, heading = GetEntityHeading(ped) },
         patientNetId = 0,
         vitals       = makeRandomVitals(callType),
 
@@ -205,7 +378,6 @@ local function createUserEMSCall(src, rawType, description)
         cprQuality   = 0,
         cprOk        = false,
 
-        -- IMPORTANT: user-created call – do NOT auto-spawn scene
         noScene      = true,
 
         assigned     = nil,
@@ -216,9 +388,6 @@ local function createUserEMSCall(src, rawType, description)
 
     activeCalls[callId] = call
 
-    sdebug(('createUserEMSCall -> id=%d type=%s from src=%d'):format(callId, callType, src))
-
-    -- send popup to all EMS on duty who are free
     for emsSrc, on in pairs(emsDuty) do
         if on and not hasAssignedCall(emsSrc) then
             TriggerClientEvent('az_ambulance:newCallout', emsSrc, call)
@@ -228,60 +397,37 @@ local function createUserEMSCall(src, rawType, description)
     sendNotify(src, 'success', 'EMS has been notified of your emergency.', 6000)
 end
 
-
 RegisterNetEvent('az_ambulance:userEMSCall', function(callType, description)
     local src = source
     sdebug(('userEMSCall from src=%d type=%s'):format(src, tostring(callType)))
+    if not allowedJob(src) then return end
     createUserEMSCall(src, callType, description)
 end)
 
--- A unit explicitly DENIES a call from the popup
 RegisterNetEvent('az_ambulance:denyCallout', function(callId)
     local src  = source
+    if not allowedJob(src) then return end
+
     local call = activeCalls[callId]
-
-    sdebug('denyCallout src='..tostring(src)..' callId='..tostring(callId))
-
     if not call then
         sendNotify(src, 'error', 'Call no longer active.', 4000)
         return
     end
 
-    -- track who denied (useful for logs / future logic)
-    call.declined        = call.declined or {}
-    call.declined[src]   = true
+    call.declined      = call.declined or {}
+    call.declined[src] = true
 
     sendNotify(src, 'info', ('You denied call %s.'):format(callId), 4000)
 end)
 
-
-
-
 ---------------------------------------------------------------------
 -- RANDOM CALLOUT GENERATOR
 ---------------------------------------------------------------------
-
 local callTemplates = {
-    {
-        type   = 'DRUNK',
-        title  = 'Drunk person down',
-        detail = 'Caller reports an intoxicated person collapsed on the sidewalk.',
-    },
-    {
-        type   = 'MVA_MINOR',
-        title  = 'Minor vehicle accident',
-        detail = 'Low-speed collision, one patient complaining of pain.',
-    },
-    {
-        type   = 'MVA_MAJOR',
-        title  = 'Major vehicle accident',
-        detail = 'Serious crash with significant damage, injuries unknown.',
-    },
-    {
-        type   = 'CARDIAC',
-        title  = 'Unresponsive patient',
-        detail = 'Caller reports patient not breathing, CPR may be required.',
-    }
+    { type = 'DRUNK',     title = 'Drunk person down',      detail = 'Caller reports an intoxicated person collapsed on the sidewalk.' },
+    { type = 'MVA_MINOR', title = 'Minor vehicle accident', detail = 'Low-speed collision, one patient complaining of pain.' },
+    { type = 'MVA_MAJOR', title = 'Major vehicle accident', detail = 'Serious crash with significant damage, injuries unknown.' },
+    { type = 'CARDIAC',   title = 'Unresponsive patient',   detail = 'Caller reports patient not breathing, CPR may be required.' }
 }
 
 local function createRandomCall(preferredSrc)
@@ -289,151 +435,136 @@ local function createRandomCall(preferredSrc)
 
     if not targetSrc or targetSrc == 0 then
         targetSrc = getRandomEMS()
-        if not targetSrc then
-            sdebug('createRandomCall -> no available EMS (none on duty or all busy)')
-            return
-        end
+        if not targetSrc then return end
     else
-        -- targeted call (like /ems_testcall): don’t give if already on a call
         if hasAssignedCall(targetSrc) then
             sendNotify(targetSrc, 'info', 'You already have an active EMS call.', 6000)
             return
         end
     end
 
-    if not isEMS(targetSrc) then
-        sendNotify(targetSrc, 'error', 'You are not EMS.', 4000)
-        return
-    end
+    if not allowedJob(targetSrc) then return end
     if not emsDuty[targetSrc] then
         sendNotify(targetSrc, 'error', 'You must be on EMS duty. Use /ems_duty.', 6000)
         return
     end
 
-    local ped = GetPlayerPed(targetSrc)
-    if not ped or ped == 0 then
-        sdebug('createRandomCall -> GetPlayerPed failed for src='..tostring(targetSrc))
-        return
+    local activeCount = countActiveCalls()
+    local maxCalls    = Config.MaxSimultaneousCalls or 3
+    if activeCount >= maxCalls then return end
+
+    -- ✅ NEW: pick far coords instead of 30–80m offsets
+    local coords = pickRandomCallCoords()
+
+    if not coords then
+        -- final fallback: still ensure "far-ish" from target unit
+        local ped = GetPlayerPed(targetSrc)
+        if not ped or ped == 0 then return end
+        local p = GetEntityCoords(ped)
+        coords = { x = p.x + 1200.0, y = p.y + 1200.0, z = p.z, heading = 0.0 }
     end
 
-    local x, y, z = table.unpack(GetEntityCoords(ped))
-
-    local offsetDist = math.random(30, 80)
-    local heading    = math.rad(math.random(0, 359))
-    local cx         = x + math.cos(heading) * offsetDist
-    local cy         = y + math.sin(heading) * offsetDist
-    local cz         = z
-
-    local tplIdx = math.random(1, #callTemplates)
-    local tpl    = callTemplates[tplIdx]
+    local tpl = callTemplates[math.random(1, #callTemplates)]
 
     local callId = nextCallId
     nextCallId   = nextCallId + 1
 
-    local coords = { x = cx, y = cy, z = cz }
+    local call = {
+        id           = callId,
+        type         = tpl.type,
+        title        = tpl.title,
+        details      = tpl.detail,
+        address      = 'Unknown address',
+        coords       = coords,
+        patientNetId = 0,
+        vitals       = makeRandomVitals(tpl.type),
 
-local call = {
-    id           = callId,
-    type         = tpl.type,
-    title        = tpl.title,
-    details      = tpl.detail,
-    address      = 'Unknown address',
-    coords       = coords,
-    patientNetId = 0,
-    vitals       = makeRandomVitals(tpl.type),
+        cprRequired  = (tpl.type == 'CARDIAC'),
+        cprDone      = false,
+        cprQuality   = 0,
+        cprOk        = false,
 
-    -- NEW: cardiac / CPR state
-    cprRequired  = (tpl.type == 'CARDIAC'),
-    cprDone      = false,
-    cprQuality   = 0,
-    cprOk        = false,
-
-    assigned     = nil,
-    assignedLabel= nil,
-    createdAt    = os.time(),
-}
-
+        assigned     = nil,
+        assignedLabel= nil,
+        createdAt    = os.time(),
+    }
 
     activeCalls[callId] = call
 
-    sdebug(('createRandomCall -> callId=%d type=%s for src=%d'):format(callId, tpl.type, targetSrc))
-
-    -- only send to EMS on duty who do NOT currently have an assigned call
     for src, on in pairs(emsDuty) do
         if on and not hasAssignedCall(src) then
             TriggerClientEvent('az_ambulance:newCallout', src, call)
         end
     end
+
+    sdebug(('createRandomCall -> id=%s type=%s minDist=%.1f')
+        :format(tostring(callId), tostring(tpl.type), (Config.CalloutMinDistance or 0.0)))
 end
 
 ---------------------------------------------------------------------
 -- DUTY TOGGLE
 ---------------------------------------------------------------------
-
 local function toggleEMSDuty(src)
     if src == 0 then
         print('[Az-Ambulance] Console cannot toggle duty.')
         return
     end
 
-    local job = Config.GetPlayerJob(src)
-    local jobLower = job and string.lower(job) or 'unknown'
-    sdebug('toggleEMSDuty src='..tostring(src)..' job='..tostring(jobLower))
+    if not allowedJob(src) then
+        sendNotify(src, 'error', 'You are not allowed to use EMS systems.', 6000)
+        return
+    end
 
+    local jobLower = tostring(Config.GetPlayerJob(src) or 'unknown'):lower()
     if not Config.EMSJobs[jobLower] then
         sendNotify(src, 'error', 'You are not EMS. Job: '..tostring(jobLower), 6000)
         return
     end
 
     local newState = not emsDuty[src]
-    emsDuty[src]   = newState
+    emsDuty[src] = newState
+
+    -- ✅ sync allowed FIRST
+    syncJobAllowed(src)
+    TriggerClientEvent('az_ambulance:setDuty', src, newState)
 
     sdebug('toggleEMSDuty -> emsDuty['..src..']='..tostring(newState))
-    TriggerClientEvent('az_ambulance:setDuty', src, newState)
 end
 
--- Chat: /ems_duty
-RegisterCommand('ems_duty', function(src, args, raw)
-    sdebug('command /ems_duty from src='..tostring(src))
+RegisterCommand('ems_duty', function(src)
+    if src ~= 0 and not allowedJob(src) then return end
     toggleEMSDuty(src)
 end, false)
 
--- Client keybind: az_ambulance:toggleDuty
 RegisterNetEvent('az_ambulance:toggleDuty', function()
     local src = source
-    sdebug('event az_ambulance:toggleDuty from src='..tostring(src))
+    if not allowedJob(src) then return end
     toggleEMSDuty(src)
 end)
 
 ---------------------------------------------------------------------
 -- STATUS UPDATE
 ---------------------------------------------------------------------
-
 RegisterNetEvent('az_ambulance:statusUpdate', function(newStatus)
     local src = source
-    if not emsDuty[src] then
-        sdebug('statusUpdate from src='..tostring(src)..' but not on duty')
-        return
-    end
+    if not allowedJob(src) then return end
+    if not emsDuty[src] then return end
     sdebug(('statusUpdate src=%d -> %s'):format(src, tostring(newStatus)))
 end)
 
 ---------------------------------------------------------------------
 -- ACCEPT / CLEAR CALLS
 ---------------------------------------------------------------------
-
 RegisterNetEvent('az_ambulance:acceptCallout', function(callId)
     local src  = source
+    if not allowedJob(src) then return end
+
     local call = activeCalls[callId]
-
-    sdebug('acceptCallout src='..tostring(src)..' callId='..tostring(callId))
-
     if not call then
         sendNotify(src, 'error', 'Call no longer active.', 4000)
         return
     end
 
-    -- if someone already has a different assigned call, they shouldn't take another
     if hasAssignedCall(src) and call.assigned ~= src then
         sendNotify(src, 'error', 'You already have an active EMS call.', 4000)
         return
@@ -448,15 +579,12 @@ RegisterNetEvent('az_ambulance:acceptCallout', function(callId)
     call.assignedLabel = ('Unit %s'):format(src)
 
     sdebug('acceptCallout -> call '..callId..' assigned to '..src)
-
     TriggerClientEvent('az_ambulance:callAccepted', -1, call)
 end)
 
 local function clearCall(callId, reason)
     local call = activeCalls[callId]
     if not call then return end
-
-    sdebug('clearCall callId='..tostring(callId)..' reason='..tostring(reason))
 
     for src, _ in pairs(emsDuty) do
         TriggerClientEvent('az_ambulance:callCleared', src, callId, reason or 'cleared')
@@ -470,6 +598,7 @@ RegisterCommand('ems_clearcall', function(src)
         print('[Az-Ambulance] Use in-game to clear calls.')
         return
     end
+    if not allowedJob(src) then return end
     if not emsDuty[src] then
         sendNotify(src, 'error', 'You are not EMS on duty.', 4000)
         return
@@ -477,10 +606,7 @@ RegisterCommand('ems_clearcall', function(src)
 
     local callId
     for id, call in pairs(activeCalls) do
-        if call.assigned == src then
-            callId = id
-            break
-        end
+        if call.assigned == src then callId = id break end
     end
 
     if not callId then
@@ -491,30 +617,92 @@ RegisterCommand('ems_clearcall', function(src)
     clearCall(callId, 'Unit cleared call.')
 end, false)
 
+---------------------------------------------------------------------
+-- PAYMENT
+---------------------------------------------------------------------
+local function normalisePayType(callType)
+    callType = (callType or ''):upper()
 
--- called by client when they arrive at hospital after transport
+    if callType == 'MVA_MINOR' or callType == 'MVA_MAJOR' then return callType end
+    if callType == 'MVA' then return 'MVA' end
+    if callType == 'CARDIAC' or callType == 'CARDIAC ARREST' then return 'CARDIAC' end
+    if callType == 'GSW' then return 'GSW' end
+    if callType == 'DRUNK' then return 'DRUNK' end
+
+    return callType
+end
+
+local function calcTransportPayout(call)
+    if not Config.Payments or Config.Payments.Enabled == false then
+        return 0
+    end
+
+    local t = normalisePayType(call and call.type)
+    local base = (Config.Payments.TransportBaseByType and Config.Payments.TransportBaseByType[t])
+        or Config.Payments.DefaultTransportPay
+        or 0
+
+    local bonus = 0
+    if call and call.type == 'CARDIAC' and call.cprOk then
+        bonus = Config.Payments.CPRBonus or 0
+    end
+
+    return math.max(0, base + bonus)
+end
+
+local function payEMSTransport(src, call)
+    local amount = calcTransportPayout(call)
+    if amount <= 0 then
+        sdebug('payEMSTransport -> amount <= 0, skipping')
+        return
+    end
+
+    fw:addMoney(src, amount)
+
+    sendNotify(src, 'success', ('Transport complete! You received $%d.'):format(amount), 6000)
+    sdebug(('Paid EMS transport -> src=%d amount=%d callId=%s type=%s')
+        :format(src, amount, tostring(call and call.id), tostring(call and call.type)))
+end
+
 RegisterNetEvent('az_ambulance:completeTransport', function(callId)
     local src  = source
-    local call = activeCalls[callId]
+    if not allowedJob(src) then
+        sdebug('completeTransport blocked: src not allowedJob')
+        return
+    end
+
+    callId = tonumber(callId)
+    local call = callId and activeCalls[callId] or nil
     sdebug('completeTransport src='..tostring(src)..' callId='..tostring(callId))
 
-    if not call then return end
+    if not call then
+        sdebug('completeTransport -> no call found')
+        return
+    end
+
     if call.assigned ~= src then
         sdebug('completeTransport -> src not assigned to this call')
         return
     end
 
+    if call.transportPaid then
+        sdebug('completeTransport -> already paid for callId='..tostring(callId))
+        return
+    end
+    call.transportPaid = true
+
+    payEMSTransport(src, call)
     clearCall(callId, 'Patient transported to hospital.')
 end)
 
 ---------------------------------------------------------------------
 -- VITALS / CPR
 ---------------------------------------------------------------------
-
 RegisterNetEvent('az_ambulance:requestVitals', function(callId, patientNetId)
     local src  = source
+    if not allowedJob(src) then return end
+
     local call = activeCalls[callId]
-    sdebug('requestVitals src='..src..' callId='..tostring(callId))
     if not call then
         TriggerClientEvent('az_ambulance:vitalsData', src, nil)
         return
@@ -524,18 +712,16 @@ end)
 
 RegisterNetEvent('az_ambulance:cprResult', function(callId, patientNetId, quality)
     local src  = source
+    if not allowedJob(src) then return end
+
     local call = activeCalls[callId]
-    if not call then
-        sdebug('cprResult src='..src..' callId '..tostring(callId)..' (no call)')
-        return
-    end
+    if not call then return end
 
     quality = tonumber(quality) or 0
-    sdebug('cprResult src='..src..' callId='..callId..' quality='..quality..' patientNetId='..tostring(patientNetId))
-
-    local msg
     local okThreshold = Config.CardiacCPRRequiredQuality or 60
     local cprOk = (quality >= okThreshold)
+
+    local msg
 
     if call.type == 'CARDIAC' then
         call.cprDone    = true
@@ -550,10 +736,8 @@ RegisterNetEvent('az_ambulance:cprResult', function(callId, patientNetId, qualit
             msg = ('CPR quality %d%% – patient remains in cardiac arrest. Keep going.'):format(quality)
         end
 
-        -- tell all EMS clients the updated CPR state for this call
         TriggerClientEvent('az_ambulance:updateCPRState', -1, callId, call.cprOk, call.cprQuality)
     else
-        -- non-cardiac, just informational
         if quality >= 80 then
             call.vitals.state = 'improving'
             msg = ('High-quality CPR (%d%%). Patient improving.'):format(quality)
@@ -569,37 +753,30 @@ RegisterNetEvent('az_ambulance:cprResult', function(callId, patientNetId, qualit
     sendNotify(src, 'info', msg, 8000)
 end)
 
-
 ---------------------------------------------------------------------
 -- TEST CALL COMMANDS
 ---------------------------------------------------------------------
-
-
-
 local function runTestEMScall(src)
-    sdebug('runTestEMScall src='..tostring(src))
     if src == 0 then
         createRandomCall(nil)
         return
     end
-
     createRandomCall(src)
 end
 
-RegisterCommand('ems_testcall', function(src, args)
-    sdebug('command /ems_testcall from src='..tostring(src))
+RegisterCommand('ems_testcall', function(src)
+    if src ~= 0 and not allowedJob(src) then return end
     runTestEMScall(src)
 end, false)
 
-RegisterCommand('testemscall', function(src, args)
-    sdebug('command /testemscall from src='..tostring(src))
+RegisterCommand('testemscall', function(src)
+    if src ~= 0 and not allowedJob(src) then return end
     runTestEMScall(src)
 end, false)
 
 ---------------------------------------------------------------------
 -- RANDOM CALLOUT LOOP (AUTO)
 ---------------------------------------------------------------------
-
 CreateThread(function()
     sdebug('Random EMS callout loop started.')
     while true do
@@ -607,24 +784,18 @@ CreateThread(function()
         local maxDelay = Config.CalloutIntervalMax or minDelay
         if maxDelay < minDelay then maxDelay = minDelay end
 
-        local waitMs = math.random(minDelay, maxDelay)
-        sdebug(('Random callout loop sleeping for %d ms'):format(waitMs))
-        Wait(waitMs)
+        Wait(math.random(minDelay, maxDelay))
 
         if not Config.CalloutsEnabled then
-            sdebug('Config.CalloutsEnabled is false; skipping this interval.')
+            sdebug('Callouts disabled.')
         else
             if not hasOnDutyEMS() then
                 sdebug('No EMS on duty; skipping random callout.')
             else
                 local activeCount = countActiveCalls()
                 local maxCalls    = Config.MaxSimultaneousCalls or 3
-                if activeCount >= maxCalls then
-                    sdebug(('Active call count %d >= MaxSimultaneousCalls %d; skipping.')
-                        :format(activeCount, maxCalls))
-                else
-                    sdebug('Creating automatic random EMS callout.')
-                    createRandomCall(nil) -- behaves like /ems_testcall but automatic
+                if activeCount < maxCalls then
+                    createRandomCall(nil)
                 end
             end
         end
@@ -634,10 +805,8 @@ end)
 ---------------------------------------------------------------------
 -- CLEANUP WHEN PLAYER DROPS
 ---------------------------------------------------------------------
-
 AddEventHandler('playerDropped', function()
     local src = source
-    sdebug('playerDropped src='..tostring(src))
     emsDuty[src] = nil
 
     for id, call in pairs(activeCalls) do
