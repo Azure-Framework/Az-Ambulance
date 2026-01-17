@@ -1,27 +1,47 @@
--- Az-Ambulance / server.lua
-
 local Config = Config or {}
 local fw = exports['Az-Framework']
 
 Config.Payments = Config.Payments or {
     Enabled = true,
 
-    TransportBaseByType = {
-        DRUNK     = 150,
-        MVA       = 220,
-        MVA_MINOR = 200,
-        MVA_MAJOR = 350,
-        GSW       = 400,
-        CARDIAC   = 500,
+    BaseByType = {
+        DRUNK     = 200,
+        MVA       = 260,
+        MVA_MINOR = 240,
+        MVA_MAJOR = 420,
+        GSW       = 520,
+        CARDIAC   = 650,
     },
 
-    DefaultTransportPay = 200,
-    CPRBonus = 150,
+    DefaultBase = 220,
+
+    PerExtraPatient = 180,
+
+    Distance = {
+        ResponsePerKm = 90,
+        ResponseMax   = 650,
+        TransportPerKm= 140,
+        TransportMax  = 950,
+    },
+
+    Speed = {
+        ResponseTargetSec  = 90,
+        ResponseMaxBonus   = 420,
+        CompletionTargetSec= 420,
+        CompletionMaxBonus = 650,
+    },
+
+    CPR = {
+        Enabled = true,
+        MinQuality = 60,
+        PerQualityPoint = 4,
+        MaxBonus = 350,
+    },
+
+    MinPay = 260,
+    MaxPay = 2600,
 }
 
----------------------------------------------------------------------
--- DEBUG
----------------------------------------------------------------------
 local EMS_DEBUG = true
 
 local function sdebug(...)
@@ -29,9 +49,6 @@ local function sdebug(...)
     print(('[Az-Ambulance][S] %s'):format(table.concat({...}, ' ')))
 end
 
----------------------------------------------------------------------
--- CONFIG FALLBACKS
----------------------------------------------------------------------
 Config.GetPlayerJob = Config.GetPlayerJob or function(source)
     local job = exports['Az-Framework']:getPlayerJob(source)
     return job and string.lower(job) or 'civ'
@@ -57,31 +74,18 @@ Config.CalloutIntervalMin   = Config.CalloutIntervalMin   or (5 * 60 * 1000)
 Config.CalloutIntervalMax   = Config.CalloutIntervalMax   or (15 * 60 * 1000)
 Config.MaxSimultaneousCalls = Config.MaxSimultaneousCalls or 3
 
--- ✅ NEW: distance control for RANDOM/system callouts
 Config.CalloutMinDistance   = Config.CalloutMinDistance or 800.0
 Config.CalloutMaxDistance   = Config.CalloutMaxDistance or 3500.0
 Config.CalloutPickAttempts  = Config.CalloutPickAttempts or 25
 
--- Optional curated points (vector4s or tables)
--- Config.CalloutPoints = Config.CalloutPoints or {
---     vector4(296.5, -584.9, 43.2, 90.0),
--- }
-
 Config.CardiacCPRRequiredQuality = Config.CardiacCPRRequiredQuality or 60
 
----------------------------------------------------------------------
--- STATE
----------------------------------------------------------------------
 local emsDuty     = {}
 local activeCalls = {}
 local nextCallId  = 1
 
----------------------------------------------------------------------
--- UTIL
----------------------------------------------------------------------
 local function allowedJob(source)
     if source == 0 then return true end
-
     local job = Config.GetPlayerJob(source)
     local j   = job and string.lower(job) or 'civ'
     local ok  = Config.EMSJobs[j] == true
@@ -92,7 +96,6 @@ end
 local function syncJobAllowed(src)
     local ok = allowedJob(src)
     TriggerClientEvent('az_ambulance:setJobAllowed', src, ok)
-
     sdebug(('syncJobAllowed -> src=%s job=%s ok=%s'):format(
         tostring(src),
         tostring(Config.GetPlayerJob(src)),
@@ -179,9 +182,6 @@ local function makeRandomVitals(templateType)
     }
 end
 
----------------------------------------------------------------------
--- ✅ DISTANCE-BASED RANDOM CALLOUT COORD PICKER
----------------------------------------------------------------------
 local function getOnDutyEMSCoords()
     local coords = {}
     for src, on in pairs(emsDuty) do
@@ -208,7 +208,6 @@ local function isFarEnoughFromAllEMS(testPos, minDist)
 end
 
 local function unpackCalloutPoint(p)
-    -- supports vector4 or table {x,y,z,heading}
     if type(p) == 'vector4' then
         return { x = p.x, y = p.y, z = p.z, heading = p.w or 0.0 }
     end
@@ -236,24 +235,21 @@ local function pickFromConfiguredPoints()
         end
     end
 
-    -- fallback any point
     local raw = pts[math.random(1, #pts)]
     return unpackCalloutPoint(raw)
 end
--- Server-safe: no road-node natives here.
+
 local function pickRandomFarPoint()
     local minDist = Config.CalloutMinDistance or 800.0
     local maxDist = Config.CalloutMaxDistance or 3500.0
     local tries   = Config.CalloutPickAttempts or 25
 
-    -- anchor around a random on-duty EMS if available; otherwise city-ish center
     local anchor = vector3(215.0, -810.0, 30.0)
     local emsList = getOnDutyEMSCoords()
     if #emsList > 0 then
         anchor = emsList[math.random(1, #emsList)]
     end
 
-    -- try to find a spot far enough from all on-duty EMS
     for _ = 1, tries do
         local angle  = math.random() * math.pi * 2
         local radius = minDist + (math.random() * (maxDist - minDist))
@@ -274,7 +270,6 @@ local function pickRandomFarPoint()
         end
     end
 
-    -- fallback: return a deterministic far-ish offset
     local angle  = math.random() * math.pi * 2
     local radius = minDist + ((maxDist - minDist) * 0.5)
 
@@ -286,20 +281,12 @@ local function pickRandomFarPoint()
     }
 end
 
-
 local function pickRandomCallCoords()
-    -- Prefer curated points if you add them
     local p = pickFromConfiguredPoints()
     if p then return p end
-
-    -- Server-safe random far point
     return pickRandomFarPoint()
 end
 
-
----------------------------------------------------------------------
--- PATIENT NET REGISTRATION (so client call won't fail)
----------------------------------------------------------------------
 RegisterNetEvent('az_ambulance:registerPatientNet', function(callId, netId)
     local src = source
     if not allowedJob(src) then return end
@@ -320,10 +307,6 @@ RegisterNetEvent('az_ambulance:registerPatientNet', function(callId, netId)
     TriggerClientEvent('az_ambulance:updateCallPatient', -1, callId, netId)
 end)
 
----------------------------------------------------------------------
--- USER /ems CALLOUTS (kept as-is for your design)
--- NOTE: your client command /ems is already EMS-gated.
----------------------------------------------------------------------
 local function normaliseUserCallType(t)
     t = (t or ''):upper()
 
@@ -363,6 +346,8 @@ local function createUserEMSCall(src, rawType, description)
     local callId = nextCallId
     nextCallId   = nextCallId + 1
 
+    local nowMs = GetGameTimer()
+
     local call = {
         id           = callId,
         type         = callType,
@@ -383,7 +368,20 @@ local function createUserEMSCall(src, rawType, description)
         assigned     = nil,
         assignedLabel= nil,
         createdAt    = os.time(),
+        createdAtMs  = nowMs,
         callerSrc    = src,
+
+        acceptAtMs   = 0,
+        acceptPos    = nil,
+        onSceneAtMs  = 0,
+        transportAtMs= 0,
+        transportHosp= nil,
+        transportHospPos = nil,
+
+        patients     = {},
+        patientCount = 0,
+
+        transportPaid = false,
     }
 
     activeCalls[callId] = call
@@ -420,9 +418,6 @@ RegisterNetEvent('az_ambulance:denyCallout', function(callId)
     sendNotify(src, 'info', ('You denied call %s.'):format(callId), 4000)
 end)
 
----------------------------------------------------------------------
--- RANDOM CALLOUT GENERATOR
----------------------------------------------------------------------
 local callTemplates = {
     { type = 'DRUNK',     title = 'Drunk person down',      detail = 'Caller reports an intoxicated person collapsed on the sidewalk.' },
     { type = 'MVA_MINOR', title = 'Minor vehicle accident', detail = 'Low-speed collision, one patient complaining of pain.' },
@@ -453,11 +448,9 @@ local function createRandomCall(preferredSrc)
     local maxCalls    = Config.MaxSimultaneousCalls or 3
     if activeCount >= maxCalls then return end
 
-    -- ✅ NEW: pick far coords instead of 30–80m offsets
     local coords = pickRandomCallCoords()
 
     if not coords then
-        -- final fallback: still ensure "far-ish" from target unit
         local ped = GetPlayerPed(targetSrc)
         if not ped or ped == 0 then return end
         local p = GetEntityCoords(ped)
@@ -468,6 +461,8 @@ local function createRandomCall(preferredSrc)
 
     local callId = nextCallId
     nextCallId   = nextCallId + 1
+
+    local nowMs = GetGameTimer()
 
     local call = {
         id           = callId,
@@ -487,6 +482,19 @@ local function createRandomCall(preferredSrc)
         assigned     = nil,
         assignedLabel= nil,
         createdAt    = os.time(),
+        createdAtMs  = nowMs,
+
+        acceptAtMs   = 0,
+        acceptPos    = nil,
+        onSceneAtMs  = 0,
+        transportAtMs= 0,
+        transportHosp= nil,
+        transportHospPos = nil,
+
+        patients     = {},
+        patientCount = 0,
+
+        transportPaid = false,
     }
 
     activeCalls[callId] = call
@@ -501,9 +509,6 @@ local function createRandomCall(preferredSrc)
         :format(tostring(callId), tostring(tpl.type), (Config.CalloutMinDistance or 0.0)))
 end
 
----------------------------------------------------------------------
--- DUTY TOGGLE
----------------------------------------------------------------------
 local function toggleEMSDuty(src)
     if src == 0 then
         print('[Az-Ambulance] Console cannot toggle duty.')
@@ -524,7 +529,6 @@ local function toggleEMSDuty(src)
     local newState = not emsDuty[src]
     emsDuty[src] = newState
 
-    -- ✅ sync allowed FIRST
     syncJobAllowed(src)
     TriggerClientEvent('az_ambulance:setDuty', src, newState)
 
@@ -542,9 +546,6 @@ RegisterNetEvent('az_ambulance:toggleDuty', function()
     toggleEMSDuty(src)
 end)
 
----------------------------------------------------------------------
--- STATUS UPDATE
----------------------------------------------------------------------
 RegisterNetEvent('az_ambulance:statusUpdate', function(newStatus)
     local src = source
     if not allowedJob(src) then return end
@@ -552,9 +553,6 @@ RegisterNetEvent('az_ambulance:statusUpdate', function(newStatus)
     sdebug(('statusUpdate src=%d -> %s'):format(src, tostring(newStatus)))
 end)
 
----------------------------------------------------------------------
--- ACCEPT / CLEAR CALLS
----------------------------------------------------------------------
 RegisterNetEvent('az_ambulance:acceptCallout', function(callId)
     local src  = source
     if not allowedJob(src) then return end
@@ -577,6 +575,13 @@ RegisterNetEvent('az_ambulance:acceptCallout', function(callId)
 
     call.assigned      = src
     call.assignedLabel = ('Unit %s'):format(src)
+
+    call.acceptAtMs = GetGameTimer()
+    local ped = GetPlayerPed(src)
+    if ped and ped ~= 0 then
+        local p = GetEntityCoords(ped)
+        call.acceptPos = { x = p.x, y = p.y, z = p.z }
+    end
 
     sdebug('acceptCallout -> call '..callId..' assigned to '..src)
     TriggerClientEvent('az_ambulance:callAccepted', -1, call)
@@ -617,41 +622,133 @@ RegisterCommand('ems_clearcall', function(src)
     clearCall(callId, 'Unit cleared call.')
 end, false)
 
----------------------------------------------------------------------
--- PAYMENT
----------------------------------------------------------------------
 local function normalisePayType(callType)
     callType = (callType or ''):upper()
-
     if callType == 'MVA_MINOR' or callType == 'MVA_MAJOR' then return callType end
     if callType == 'MVA' then return 'MVA' end
     if callType == 'CARDIAC' or callType == 'CARDIAC ARREST' then return 'CARDIAC' end
     if callType == 'GSW' then return 'GSW' end
     if callType == 'DRUNK' then return 'DRUNK' end
-
     return callType
+end
+
+local function clamp(n, a, b)
+    if n < a then return a end
+    if n > b then return b end
+    return n
+end
+
+local function calcBonusBySpeed(seconds, target, maxBonus)
+    if not seconds or seconds <= 0 then return 0 end
+    if not target or target <= 0 then return 0 end
+    if not maxBonus or maxBonus <= 0 then return 0 end
+    local ratio = clamp(target / seconds, 0.0, 2.0)
+    local bonus = (ratio - 1.0) * maxBonus
+    if bonus < 0 then bonus = 0 end
+    return math.floor(bonus + 0.5)
+end
+
+local function calcDistancePay(meters, perKm, maxPay)
+    if not meters or meters <= 0 then return 0 end
+    if not perKm or perKm <= 0 then return 0 end
+    local km = meters / 1000.0
+    local v = km * perKm
+    if maxPay and maxPay > 0 then
+        v = math.min(v, maxPay)
+    end
+    return math.floor(v + 0.5)
+end
+
+local function vec3from(pos)
+    if not pos then return nil end
+    return vector3(pos.x or 0.0, pos.y or 0.0, pos.z or 0.0)
 end
 
 local function calcTransportPayout(call)
     if not Config.Payments or Config.Payments.Enabled == false then
-        return 0
+        return 0, {}
     end
 
+    local p = Config.Payments
     local t = normalisePayType(call and call.type)
-    local base = (Config.Payments.TransportBaseByType and Config.Payments.TransportBaseByType[t])
-        or Config.Payments.DefaultTransportPay
-        or 0
+    local base = (p.BaseByType and p.BaseByType[t]) or p.DefaultBase or 0
 
-    local bonus = 0
-    if call and call.type == 'CARDIAC' and call.cprOk then
-        bonus = Config.Payments.CPRBonus or 0
+    local patientCount = tonumber(call and call.patientCount) or 0
+    if patientCount <= 0 then patientCount = 1 end
+    local extraPatients = math.max(0, patientCount - 1)
+    local patientPay = extraPatients * (p.PerExtraPatient or 0)
+
+    local callPos = call and call.coords and vector3(call.coords.x or 0.0, call.coords.y or 0.0, call.coords.z or 0.0) or nil
+    local acceptPos = vec3from(call and call.acceptPos)
+    local hospPos = vec3from(call and call.transportHospPos)
+
+    local responseDist = 0.0
+    if callPos and acceptPos then
+        responseDist = #(acceptPos - callPos)
     end
 
-    return math.max(0, base + bonus)
+    local transportDist = 0.0
+    if callPos and hospPos then
+        transportDist = #(callPos - hospPos)
+    end
+
+    local responsePay = calcDistancePay(responseDist, p.Distance and p.Distance.ResponsePerKm, p.Distance and p.Distance.ResponseMax)
+    local transportPay = calcDistancePay(transportDist, p.Distance and p.Distance.TransportPerKm, p.Distance and p.Distance.TransportMax)
+
+    local acceptAt = tonumber(call and call.acceptAtMs) or 0
+    local onSceneAt = tonumber(call and call.onSceneAtMs) or 0
+    local doneAt = GetGameTimer()
+
+    local responseSec = 0
+    if acceptAt > 0 and onSceneAt > 0 and onSceneAt >= acceptAt then
+        responseSec = (onSceneAt - acceptAt) / 1000.0
+    end
+
+    local completionSec = 0
+    if acceptAt > 0 and doneAt >= acceptAt then
+        completionSec = (doneAt - acceptAt) / 1000.0
+    end
+
+    local responseSpeedBonus = calcBonusBySpeed(responseSec, p.Speed and p.Speed.ResponseTargetSec, p.Speed and p.Speed.ResponseMaxBonus)
+    local completionSpeedBonus = calcBonusBySpeed(completionSec, p.Speed and p.Speed.CompletionTargetSec, p.Speed and p.Speed.CompletionMaxBonus)
+
+    local cprBonus = 0
+    if p.CPR and p.CPR.Enabled and (call and (call.type or ''):upper() == 'CARDIAC') then
+        local q = tonumber(call and call.cprQuality) or 0
+        local minQ = tonumber(p.CPR.MinQuality) or 0
+        if q >= minQ then
+            cprBonus = (q - minQ) * (tonumber(p.CPR.PerQualityPoint) or 0)
+            cprBonus = math.floor(cprBonus + 0.5)
+            if p.CPR.MaxBonus and p.CPR.MaxBonus > 0 then
+                cprBonus = math.min(cprBonus, p.CPR.MaxBonus)
+            end
+        end
+    end
+
+    local total = base + patientPay + responsePay + transportPay + responseSpeedBonus + completionSpeedBonus + cprBonus
+    total = clamp(total, p.MinPay or 0, p.MaxPay or 999999)
+
+    local breakdown = {
+        base = base,
+        patients = patientPay,
+        responseDist = math.floor(responseDist + 0.5),
+        responsePay = responsePay,
+        transportDist = math.floor(transportDist + 0.5),
+        transportPay = transportPay,
+        responseSec = math.floor(responseSec + 0.5),
+        responseSpeed = responseSpeedBonus,
+        completionSec = math.floor(completionSec + 0.5),
+        completionSpeed = completionSpeedBonus,
+        cpr = cprBonus,
+        total = total,
+        patientCount = patientCount,
+    }
+
+    return total, breakdown
 end
 
 local function payEMSTransport(src, call)
-    local amount = calcTransportPayout(call)
+    local amount, b = calcTransportPayout(call)
     if amount <= 0 then
         sdebug('payEMSTransport -> amount <= 0, skipping')
         return
@@ -659,10 +756,76 @@ local function payEMSTransport(src, call)
 
     fw:addMoney(src, amount)
 
-    sendNotify(src, 'success', ('Transport complete! You received $%d.'):format(amount), 6000)
+    local msg = ('Transport complete! $%d | Base %d | Pts %d(+%d) | Resp %dm $%d +%ds $%d | Trans %dm $%d | Speed +%d | CPR +%d')
+        :format(
+            amount,
+            b.base or 0,
+            b.patientCount or 1,
+            b.patients or 0,
+            b.responseDist or 0,
+            b.responsePay or 0,
+            b.responseSec or 0,
+            b.responseSpeed or 0,
+            b.transportDist or 0,
+            b.transportPay or 0,
+            (b.completionSpeed or 0),
+            (b.cpr or 0)
+        )
+
+    sendNotify(src, 'success', msg, 9000)
     sdebug(('Paid EMS transport -> src=%d amount=%d callId=%s type=%s')
         :format(src, amount, tostring(call and call.id), tostring(call and call.type)))
 end
+
+RegisterNetEvent('az_ambulance:onScene', function(callId)
+    local src = source
+    if not allowedJob(src) then return end
+    callId = tonumber(callId)
+    local call = callId and activeCalls[callId] or nil
+    if not call then return end
+    if call.assigned ~= src then return end
+    if call.onSceneAtMs and call.onSceneAtMs > 0 then return end
+    call.onSceneAtMs = GetGameTimer()
+    sdebug(('onScene callId=%s src=%s'):format(tostring(callId), tostring(src)))
+end)
+
+RegisterNetEvent('az_ambulance:patientLoaded', function(callId, patientNetId)
+    local src = source
+    if not allowedJob(src) then return end
+    callId = tonumber(callId)
+    patientNetId = tonumber(patientNetId) or 0
+    local call = callId and activeCalls[callId] or nil
+    if not call then return end
+    if call.assigned ~= src then return end
+    if patientNetId <= 0 then return end
+
+    call.patients = call.patients or {}
+    if not call.patients[patientNetId] then
+        call.patients[patientNetId] = true
+        local c = 0
+        for _k, _v in pairs(call.patients) do c = c + 1 end
+        call.patientCount = c
+        sdebug(('patientLoaded callId=%s src=%s netId=%s count=%s'):format(tostring(callId), tostring(src), tostring(patientNetId), tostring(c)))
+    end
+end)
+
+RegisterNetEvent('az_ambulance:transportStart', function(callId, hospName, hx, hy, hz)
+    local src = source
+    if not allowedJob(src) then return end
+    callId = tonumber(callId)
+    local call = callId and activeCalls[callId] or nil
+    if not call then return end
+    if call.assigned ~= src then return end
+
+    if not call.transportAtMs or call.transportAtMs <= 0 then
+        call.transportAtMs = GetGameTimer()
+    end
+
+    call.transportHosp = tostring(hospName or 'Hospital')
+    call.transportHospPos = { x = tonumber(hx) or 0.0, y = tonumber(hy) or 0.0, z = tonumber(hz) or 0.0 }
+
+    sdebug(('transportStart callId=%s src=%s hosp=%s'):format(tostring(callId), tostring(src), tostring(call.transportHosp)))
+end)
 
 RegisterNetEvent('az_ambulance:completeTransport', function(callId)
     local src  = source
@@ -691,13 +854,14 @@ RegisterNetEvent('az_ambulance:completeTransport', function(callId)
     end
     call.transportPaid = true
 
+    if not call.patientCount or call.patientCount <= 0 then
+        call.patientCount = 1
+    end
+
     payEMSTransport(src, call)
     clearCall(callId, 'Patient transported to hospital.')
 end)
 
----------------------------------------------------------------------
--- VITALS / CPR
----------------------------------------------------------------------
 RegisterNetEvent('az_ambulance:requestVitals', function(callId, patientNetId)
     local src  = source
     if not allowedJob(src) then return end
@@ -753,9 +917,6 @@ RegisterNetEvent('az_ambulance:cprResult', function(callId, patientNetId, qualit
     sendNotify(src, 'info', msg, 8000)
 end)
 
----------------------------------------------------------------------
--- TEST CALL COMMANDS
----------------------------------------------------------------------
 local function runTestEMScall(src)
     if src == 0 then
         createRandomCall(nil)
@@ -774,9 +935,6 @@ RegisterCommand('testemscall', function(src)
     runTestEMScall(src)
 end, false)
 
----------------------------------------------------------------------
--- RANDOM CALLOUT LOOP (AUTO)
----------------------------------------------------------------------
 CreateThread(function()
     sdebug('Random EMS callout loop started.')
     while true do
@@ -802,9 +960,6 @@ CreateThread(function()
     end
 end)
 
----------------------------------------------------------------------
--- CLEANUP WHEN PLAYER DROPS
----------------------------------------------------------------------
 AddEventHandler('playerDropped', function()
     local src = source
     emsDuty[src] = nil

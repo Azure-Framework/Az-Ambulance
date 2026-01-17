@@ -1,15 +1,8 @@
--- Az-Ambulance / callouts.lua
--- All scene-spawn logic for EMS callouts lives here so it’s easy to tweak.
 
 AzCallouts = AzCallouts or {}
 local AC = AzCallouts
 
-AC.Scenes = AC.Scenes or {} -- [callId] = { peds = {}, vehicles = {} }
-
----------------------------------------------------------------------
--- helpers
----------------------------------------------------------------------
-
+AC.Scenes = AC.Scenes or {} 
 local function addSceneEntity(callId, kind, entity)
     if not entity or entity == 0 or not DoesEntityExist(entity) then return end
     AC.Scenes[callId] = AC.Scenes[callId] or { peds = {}, vehicles = {} }
@@ -51,7 +44,7 @@ local function offsetFromHeading(origin, headingDeg, forwardDist, sideDist)
     local fx = math.sin(h)
     local fy = math.cos(h)
     local sx = -fy
-    local sy = fx -- 90° left
+    local sy = fx 
 
     local x = origin.x + fx * forwardDist + sx * sideDist
     local y = origin.y + fy * forwardDist + sy * sideDist
@@ -63,7 +56,7 @@ local function getRoadPositionAround(coords)
 
     local ok, outPos = GetClosestVehicleNode(x, y, z, false, 3.0, 0)
     if ok and outPos then
-        -- subtle shift so patient isn't always dead-center of the node
+        
         local heading = coords.heading or 0.0
         local fwd  = math.random(0, 8)
         local side = math.random(-4, 4)
@@ -82,9 +75,9 @@ local function chooseRandom(list, defaultVal)
     return list[math.random(1, #list)]
 end
 
----------------------------------------------------------------------
--- primitive spawners
----------------------------------------------------------------------
+
+
+
 
 local defaultPatientModels = Config and Config.PatientModels or {
     `a_m_m_skidrow_01`,
@@ -160,9 +153,9 @@ local function spawnMVCVehicle(callId, coords, heading)
     return veh
 end
 
----------------------------------------------------------------------
--- scene builders per call-type
----------------------------------------------------------------------
+
+
+
 
 local function spawnSimpleSinglePatient(call)
     local callId  = call.id
@@ -221,9 +214,9 @@ local function spawnMVCScene(call, vehMin, vehMax, pedMin, pedMax)
     return primaryNetId
 end
 
----------------------------------------------------------------------
--- public API
----------------------------------------------------------------------
+
+
+
 
 function AC.SpawnForCallType(call)
     if not call or not call.coords or not call.id then return nil end

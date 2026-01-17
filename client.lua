@@ -1,38 +1,29 @@
--- Az-Ambulance / client.lua
-
-local currentCall      = nil   -- active call table from server
+local currentCall      = nil
 local callBlip         = nil
 local hospitalBlip     = nil
 local isEMSOnDuty      = false
-local status           = 'AVAILABLE' -- AVAILABLE, ENROUTE, ONSCENE, TRANSPORT, HOSPITAL
+local status           = 'AVAILABLE'
 
 local nearbyPatient    = nil
 local lastPatientCheck = 0
-local pendingCallId    = nil   -- call we have a popup for
+local pendingCallId    = nil
 
--- STRETCHER / TRANSPORT (MULTI)
 local stretchers = {}
--- stretchers[patientNetId] = { bed = entity, patient = ped, onBed = bool }
 
-local activeHospital   = nil -- table from Config.Hospitals for current transport
+local activeHospital   = nil
 
--- NEW: server-controlled job gate
 local isEMSAllowed   = false
 local emsActionsOpen = false
 
----------------------------------------------------------------------
--- DEBUG
----------------------------------------------------------------------
 local EMS_DEBUG = true
+
+local sceneNotified = false
 
 local function cdebug(...)
     if not EMS_DEBUG then return end
     print(('[Az-Ambulance][C] %s'):format(table.concat({...}, ' ')))
 end
 
----------------------------------------------------------------------
--- SERVER JOB CHECK SYNC
----------------------------------------------------------------------
 CreateThread(function()
     Wait(2000)
     cdebug('Requesting EMS job allowed state from server...')
@@ -44,7 +35,6 @@ RegisterNetEvent('az_ambulance:setJobAllowed', function(allowed)
     cdebug('event setJobAllowed allowed='..tostring(isEMSAllowed))
 
     if not isEMSAllowed then
-        -- Force everything off & UI cleared if we lose EMS job
         isEMSOnDuty    = false
         pendingCallId  = nil
         nearbyPatient  = nil
@@ -52,8 +42,8 @@ RegisterNetEvent('az_ambulance:setJobAllowed', function(allowed)
         activeHospital = nil
         status         = 'AVAILABLE'
         emsActionsOpen = false
+        sceneNotified  = false
 
-        -- clear multi stretchers
         for netId, st in pairs(stretchers) do
             if st and st.bed and DoesEntityExist(st.bed) then
                 DeleteEntity(st.bed)
@@ -78,9 +68,6 @@ RegisterNetEvent('az_ambulance:setJobAllowed', function(allowed)
     end
 end)
 
----------------------------------------------------------------------
--- UTIL / UI
----------------------------------------------------------------------
 local function ui(msg)
     SendNUIMessage(msg)
 end
@@ -183,13 +170,11 @@ local function setEMSOnDuty(value)
         clearCallBlip()
         clearHospitalBlip()
         status = 'AVAILABLE'
+        sceneNotified = false
     end
     updateHUD()
 end
 
----------------------------------------------------------------------
--- CURRENT PATIENT HELPERS (multi-patient support)
----------------------------------------------------------------------
 local function getCurrentPatientPed()
     if nearbyPatient and DoesEntityExist(nearbyPatient) then
         return nearbyPatient
@@ -265,9 +250,6 @@ local function getClosestLoadedStretcher(maxDist)
     return bestNet, bestSt, bestDist
 end
 
----------------------------------------------------------------------
--- DUTY / STATUS
----------------------------------------------------------------------
 local function isCardiacCall()
     return currentCall and (currentCall.type or ''):upper() == 'CARDIAC'
 end
@@ -329,9 +311,6 @@ RegisterCommand('ems_status', function(_, args)
     TriggerServerEvent('az_ambulance:statusUpdate', newStatus)
 end, false)
 
----------------------------------------------------------------------
--- CALLOUTS (POPUP / ACCEPT / CLEAR)
----------------------------------------------------------------------
 local function buildAddressFromCoords(coords)
     if not coords then return nil end
     local x, y, z = coords.x, coords.y, coords.z
@@ -439,6 +418,7 @@ RegisterNetEvent('az_ambulance:callAccepted', function(call)
 
     currentCall = call
     status      = 'ENROUTE'
+    sceneNotified = false
 
     if (not currentCall.address or currentCall.address == 'Unknown address') and currentCall.coords then
         currentCall.address = buildAddressFromCoords(currentCall.coords)
@@ -489,6 +469,7 @@ RegisterNetEvent('az_ambulance:callCleared', function(id, reason)
     nearbyPatient = nil
     pendingCallId = nil
     clearAllStretchers()
+    sceneNotified = false
 
     ui({ action = 'call_popup_hide' })
     notify('Call cleared: '..(reason or 'completed'), 'success')
@@ -548,9 +529,6 @@ CreateThread(function()
     end
 end)
 
----------------------------------------------------------------------
--- PATIENT NEARBY CHECK (multi-patient)
----------------------------------------------------------------------
 local function refreshNearbyPatient()
     nearbyPatient = nil
     if not currentCall then return end
@@ -586,6 +564,11 @@ local function refreshNearbyPatient()
     end
 
     nearbyPatient = bestPed
+
+    if bestPed and currentCall and not sceneNotified then
+        sceneNotified = true
+        TriggerServerEvent('az_ambulance:onScene', currentCall.id)
+    end
 end
 
 CreateThread(function()
@@ -604,9 +587,6 @@ CreateThread(function()
     end
 end)
 
----------------------------------------------------------------------
--- CPR MINI-GAME
----------------------------------------------------------------------
 local cprActive = false
 
 local function stopCPRAnim()
@@ -673,9 +653,6 @@ RegisterNUICallback('cpr_cancel', function(_, cb)
     cb({})
 end)
 
----------------------------------------------------------------------
--- ASSESSMENT / VITALS
----------------------------------------------------------------------
 RegisterCommand('ems_assess', function()
     if not isPlayerEMS() then return end
     if not nearbyPatient then
@@ -711,11 +688,8 @@ RegisterNUICallback('assessment_close', function(_, cb)
     cb({})
 end)
 
----------------------------------------------------------------------
--- STRETCHER / TRANSPORT
----------------------------------------------------------------------
 local stretcherModels = {
-    -213759178, -- custom stretcher model
+    -213759178,
 }
 
 local function loadFirstAvailableModel(list, timeoutMs)
@@ -846,6 +820,8 @@ RegisterCommand('ems_loadpatient', function()
     st.patient = patient
     st.onBed   = true
 
+    TriggerServerEvent('az_ambulance:patientLoaded', currentCall.id, patientNetId)
+
     notify('Patient loaded on stretcher. Move it near your ambulance then use /ems_load.', 'success', 15000)
 end, false)
 
@@ -942,7 +918,6 @@ RegisterCommand('ems_load', function()
         return
     end
 
-    -- pick closest LOADED stretcher
     local patientNetId, st = getClosestLoadedStretcher(6.0)
     if not patientNetId or not st or not st.bed or not DoesEntityExist(st.bed) then
         notify('No loaded stretcher nearby.', 'error')
@@ -992,7 +967,8 @@ RegisterCommand('ems_load', function()
     SetNewWaypoint(nearestHosp.x, nearestHosp.y)
     activeHospital = nearestHosp
 
-    -- cleanup only THIS stretcher
+    TriggerServerEvent('az_ambulance:transportStart', currentCall.id, nearestHosp.name or 'Hospital', nearestHosp.x, nearestHosp.y, nearestHosp.z)
+
     if st.patient and DoesEntityExist(st.patient) then
         DeleteEntity(st.patient)
     end
@@ -1007,7 +983,6 @@ RegisterCommand('ems_load', function()
     TriggerServerEvent('az_ambulance:statusUpdate', status)
 end, false)
 
--- watch for arrival at hospital; auto-complete call + PAY
 CreateThread(function()
     while true do
         if isEMSAllowed and isEMSOnDuty and activeHospital and hospitalBlip then
@@ -1023,19 +998,18 @@ CreateThread(function()
 
                 local finishedCallId = currentCall and currentCall.id or nil
 
-                -- ✅ TELL SERVER TO PAY + CLEAR CALL
                 if finishedCallId then
                     cdebug('Triggering completeTransport for callId='..tostring(finishedCallId))
                     TriggerServerEvent('az_ambulance:completeTransport', finishedCallId)
                 end
 
-                -- local reset
                 clearHospitalBlip()
                 clearAllStretchers()
                 currentCall   = nil
                 nearbyPatient = nil
                 status        = 'AVAILABLE'
                 updateHUD()
+                sceneNotified = false
 
                 if finishedCallId and AzCallouts and AzCallouts.CleanupScene then
                     AzCallouts.CleanupScene(finishedCallId)
@@ -1048,10 +1022,6 @@ CreateThread(function()
         end
     end
 end)
-
----------------------------------------------------------------------
--- EMS ACTIONS MENU (ALT)
----------------------------------------------------------------------
 local function openEMSMenu()
     if not isPlayerEMS() then
         notify('You are not EMS on duty.', 'error')
@@ -1075,16 +1045,17 @@ RegisterCommand('ems_actions', function()
     if emsActionsOpen then closeEMSMenu() else openEMSMenu() end
 end, false)
 
-CreateThread(function()
-    while true do
-        if isPlayerEMS() then
-            if IsControlPressed(0, 36) and IsControlJustPressed(0, 19) then
-                if emsActionsOpen then closeEMSMenu() else openEMSMenu() end
-            end
-        end
-        Wait(0)
-    end
-end)
+RegisterCommand('ems_actions_key', function()
+    if not isEMSAllowed then return end
+    if emsActionsOpen then closeEMSMenu() else openEMSMenu() end
+end, false)
+
+RegisterKeyMapping(
+    'ems_actions_key',
+    'EMS: Open Actions Menu',
+    'keyboard',
+    (Config.Keys and Config.Keys.ActionsMenu) or 'F6'
+)
 
 RegisterNUICallback('ems_action', function(data, cb)
     local cmd = data and data.cmd
@@ -1094,11 +1065,9 @@ RegisterNUICallback('ems_action', function(data, cb)
         return
     end
 
+    closeEMSMenu()
     if cmd and cmd ~= '' then
-        closeEMSMenu()
         ExecuteCommand(cmd)
-    else
-        closeEMSMenu()
     end
     cb({})
 end)
@@ -1108,16 +1077,31 @@ RegisterNUICallback('ems_actions_close', function(_, cb)
     cb({})
 end)
 
----------------------------------------------------------------------
--- HELP / CLEANUP
----------------------------------------------------------------------
-RegisterCommand('ems_help', function()
+local function showEMSHelp()
     if not isEMSAllowed then
         notify('You are not allowed to use EMS systems.', 'error')
         return
     end
-    notify('EMS: /ems_duty, /ems_status, /ems_cpr, /ems_assess, /ems_stretcher, /ems_loadpatient, /ems_load, /ems_actions.', 'info', 15000)
+
+    notify('EMS HELP — Quick Start', 'info', 9000)
+    notify('1) Go on duty: /ems_duty (or press F5). Off duty disables EMS UI/features.', 'info', 12000)
+    notify('2) Calls: When a call pops up, accept with the popup OR press E. Deny with X.', 'info', 12000)
+    notify('3) Optional status: /ems_status AVAILABLE|ENROUTE|ONSCENE|TRANSPORT|HOSPITAL', 'info', 12000)
+    notify('4) On scene: Get near the patient. Use /ems_assess (F8) to view vitals.', 'info', 12000)
+    notify('5) CPR: /ems_cpr (F7). For CARDIAC calls you must get good CPR before loading.', 'info', 12000)
+    notify('6) Stretcher flow: /ems_stretcher -> /ems_loadpatient -> move to ambulance -> /ems_load', 'info', 12000)
+    notify('7) Actions menu: /ems_actions or press '..tostring((Config.Keys and Config.Keys.ActionsMenu) or 'F6')..'.', 'info', 12000)
+    notify('Caller command: /ems opens the emergency call dialog (requires ox_lib inputDialog).', 'info', 12000)
+end
+
+RegisterCommand('emshelp', function()
+    showEMSHelp()
 end, false)
+
+RegisterCommand('ems_help', function()
+    showEMSHelp()
+end, false)
+
 
 AddEventHandler('onResourceStop', function(res)
     if res ~= GetCurrentResourceName() then return end
