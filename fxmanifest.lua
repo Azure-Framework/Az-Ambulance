@@ -1,8 +1,8 @@
 fx_version 'cerulean'
 game 'gta5'
 
-name 'az_ambulance'
-author 'You + ChatGPT'
+name 'Az-Ambulance'
+author 'Azure'
 description 'Ambulance / EMS system with callouts, CPR mini‑game and medical HUD'
 
 lua54 'yes'
@@ -19,7 +19,7 @@ client_scripts {
 }
 
 server_scripts {
-    '@oxmysql/lib/MySQL.lua', -- remove if you do not use oxmysql
+    '@oxmysql/lib/MySQL.lua',
     'server.lua'
 }
 

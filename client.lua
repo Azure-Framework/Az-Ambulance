@@ -1102,7 +1102,6 @@ RegisterCommand('ems_help', function()
     showEMSHelp()
 end, false)
 
-
 AddEventHandler('onResourceStop', function(res)
     if res ~= GetCurrentResourceName() then return end
     SetNuiFocus(false, false)

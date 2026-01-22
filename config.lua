@@ -1,17 +1,15 @@
 Config = {}
-
--- config.lua
 Config.EMSJobs = {
     ['police'] = true,
     ['ems']       = true,
     ['doctor']    = true,
 }
 
--- Use Az-Framework job export
+
 Config.GetPlayerJob = function(source)
     local job = exports['Az-Framework']:getPlayerJob(source)
 
-    -- Az-Framework might return a string or a table; support both.
+    
     if type(job) == 'string' then
         return string.lower(job)
     elseif type(job) == 'table' and job.name then
@@ -21,31 +19,31 @@ Config.GetPlayerJob = function(source)
     return nil
 end
 
--- CALL OUT CONFIG
+
 Config.CalloutsEnabled      = true
-Config.CalloutIntervalMin   = 1 * 60 * 1000  -- 5 minutes
-Config.CalloutIntervalMax   = 1 * 60 * 1000 -- 15 minutes
+Config.CalloutIntervalMin   = 1 * 60 * 1000  
+Config.CalloutIntervalMax   = 1 * 60 * 1000 
 Config.MaxSimultaneousCalls = 3
 
 
--- How far away AI/system callouts should spawn from on-duty EMS
-Config.CalloutMinDistance = 500.0     -- meters (try 600-1200)
-Config.CalloutMaxDistance = 750.0    -- optional cap if you use random radius logic
+
+Config.CalloutMinDistance = 500.0     
+Config.CalloutMaxDistance = 750.0    
 Config.CalloutPickAttempts = 25
 
 
--- Blip + distance settings
+
 Config.CallBlipSprite   = 153
 Config.CallBlipColour   = 1
 Config.CallBlipScale    = 1.0
-Config.AcceptDistance   = 50.0 -- distance from call origin to press E and "go on scene"
-Config.InteractDistance = 3.0  -- distance to patient for CPR / assessment
+Config.AcceptDistance   = 50.0 
+Config.InteractDistance = 3.0  
 
--- Locations for random callouts (examples only, add your own)
+
 Config.CalloutLocations = {
     drunk = {
-        { x = 199.53,  y = -1023.41, z = 29.45, heading = 180.0 }, -- outside Legion
-        { x = -560.21, y = 286.40,   z = 82.18, heading = 180.0 }, -- Vinewood
+        { x = 199.53,  y = -1023.41, z = 29.45, heading = 180.0 }, 
+        { x = -560.21, y = 286.40,   z = 82.18, heading = 180.0 }, 
     },
     mvc_small = {
         { x = 422.34,  y = -1014.56, z = 29.04, heading = 90.0 },
@@ -57,7 +55,7 @@ Config.CalloutLocations = {
     }
 }
 
--- PEDESTAL MODELS
+
 Config.PatientModels = {
     `a_m_m_skidrow_01`,
     `a_m_m_business_01`,
@@ -65,10 +63,10 @@ Config.PatientModels = {
     `a_m_y_stbla_02`,
 }
 
--- VEHICLE model used for MVC scenes
+
 Config.MVCVehicleModel = `blista`
 
--- PATIENT STATES / VITALS
+
 Config.VitalsPresets = {
     drunk = {
         heartRate = {90, 120},
@@ -112,26 +110,26 @@ Config.VitalsPresets = {
     }
 }
 
--- How long CPR mini‑game runs (seconds) and how many good compressions required
+
 Config.CPRDurationSeconds = 30
 Config.CPRRequiredGood    = 25
 
--- CPR good timing window (milliseconds between clicks)
--- corresponds roughly to 100–120 compressions per minute
+
+
 Config.CPRGoodMinMs = 450
 Config.CPRGoodMaxMs = 600
 
--- UI KEYS (client will just show them; we still use key mapping)
+
 Config.Keys = {
     ToggleStatus = 'F6',
     StartCPR     = 'F7',
     Assessment   = 'F8'
 }
 
-Config.HospitalArriveDistance = 18.0  -- metres around hospital entrance to complete call
+Config.HospitalArriveDistance = 18.0  
 
 Config.Hospitals = {
-    -- Front doors / ambulance bays – tweak as you like
+    
     {
         name = 'Pillbox Hill Medical',
         x = 295.0,   y = -1446.0, z = 29.0
