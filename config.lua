@@ -1,9 +1,14 @@
 Config = {}
+
+
 Config.EMSJobs = {
-    ['police'] = true,
+    ['ambulance'] = true,
     ['ems']       = true,
     ['doctor']    = true,
+    ['paramedic'] = true,
 }
+
+Config.JobSyncIntervalMs = 5000
 
 
 Config.GetPlayerJob = function(source)
@@ -21,9 +26,10 @@ end
 
 
 Config.CalloutsEnabled      = true
-Config.CalloutIntervalMin   = 1 * 60 * 1000  
-Config.CalloutIntervalMax   = 1 * 60 * 1000 
+Config.CalloutIntervalMin   = 5 * 60 * 1000  
+Config.CalloutIntervalMax   = 15 * 60 * 1000 
 Config.MaxSimultaneousCalls = 3
+Config.CallSceneSpawnReserveMs = 8000
 
 
 
@@ -31,6 +37,50 @@ Config.CalloutMinDistance = 500.0
 Config.CalloutMaxDistance = 750.0    
 Config.CalloutPickAttempts = 25
 
+Config.DynamicCallouts = {
+    Enabled     = true,
+    TimeoutMs   = 5000,
+    Attempts    = 45,
+    UseRoadBias = true,
+    RequireRoad = true,
+    RejectWater = true,
+}
+
+Config.LikelyAmbulanceModels = {
+    `ambulance`,
+    `EMSf550ambo`,
+    `EMSf550ambo2`,
+    `EMSfpiunLB`,
+    `EMSfpiunSLK`
+
+}
+
+Config.LikelyAmbulanceClasses = {
+    [18] = true
+}
+
+
+
+Config.ThirdEye = {
+    Enabled = true,              
+    UseOxTarget = true,          
+    DrawSprite = false,
+    Debug = false,
+    StationRadius = 2.25,
+    PatientDistance = 2.5,
+    VehicleDistance = 3.0,
+}
+
+
+Config.EMSStations = {
+    { name = 'Pillbox EMS Bay', x = 307.18, y = -1433.61, z = 29.97 },
+    { name = 'Sandy Shores EMS', x = 1839.42, y = 3671.28, z = 34.28 },
+    { name = 'Paleto Bay EMS', x = -254.07, y = 6339.15, z = 32.43 },
+}
+
+
+
+Config.DutyStations = Config.DutyStations or Config.EMSStations
 
 
 Config.CallBlipSprite   = 153
@@ -120,10 +170,18 @@ Config.CPRGoodMinMs = 450
 Config.CPRGoodMaxMs = 600
 
 
+
+Config.PatientGroundOffset = 0.72 
+Config.ShowIncomingCallPopup = false 
+
 Config.Keys = {
-    ToggleStatus = 'F6',
+    ToggleStatus = 'F5',
+    ActionsMenu  = 'F6',
     StartCPR     = 'F7',
-    Assessment   = 'F8'
+    Assessment   = 'F8',
+    CallBoard    = 'F4',
+    AcceptCall   = 'E',
+    Guide        = 'F10'
 }
 
 Config.HospitalArriveDistance = 18.0  

@@ -1,8 +1,8 @@
 fx_version 'cerulean'
 game 'gta5'
 
-name 'Az-Ambulance'
-author 'Azure'
+name 'az_ambulance'
+author 'MadebyAzure'
 description 'Ambulance / EMS system with callouts, CPR mini‑game and medical HUD'
 
 lua54 'yes'
@@ -19,7 +19,7 @@ client_scripts {
 }
 
 server_scripts {
-    '@oxmysql/lib/MySQL.lua',
+    '@oxmysql/lib/MySQL.lua', 
     'server.lua'
 }
 

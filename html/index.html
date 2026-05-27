@@ -4,560 +4,239 @@
   <meta charset="utf-8">
   <title>Az-Ambulance UI</title>
   <style>
-    * { box-sizing:border-box; margin:0; padding:0; font-family:Arial, sans-serif; }
-    body { background:transparent; overflow:hidden; color:#fff; }
-        .hidden { display:none !important; }
-
-    /* HUD (top-left) */
-    #hud {
-      position:fixed;
-      left:20px;
-      top:80px;
-      width:260px;
-      padding:8px 10px;
-      background:rgba(0,0,0,0.75);
-      border-radius:6px;
-      font-size:12px;
-    }
-    #hud h1 {
-      font-size:14px;
-      margin-bottom:4px;
-      border-bottom:1px solid rgba(255,255,255,0.15);
-      padding-bottom:3px;
-    }
-    #hud .row {
-      display:flex;
-      justify-content:space-between;
-      margin-top:1px;
-    }
-    #hud .label { color:#ccc; }
-    #hud .value { font-weight:bold; }
-
-    /* Notifications */
-    #notifications {
-      position:fixed;
-      top:40px;
-      right:30px;
-      width:320px;
-      display:flex;
-      flex-direction:column;
-      gap:6px;
-      pointer-events:none;
-    }
-    .toast {
-      background:rgba(0,0,0,0.85);
-      padding:6px 8px;
-      border-radius:4px;
-      font-size:11px;
-      border-left:3px solid #58a6ff;
-    }
-    .toast.info { border-color:#58a6ff; }
-    .toast.warning { border-color:#ffd966; }
-    .toast.error { border-color:#ff4b4b; }
-    .toast.success { border-color:#5bff8a; }
-
-    /* Call popup */
-    #call-popup {
-      position:fixed;
-      top:30%;
-      left:50%;
-      transform:translate(-50%,-50%);
-      width:360px;
-      padding:14px 16px;
-      border-radius:8px;
-      background:rgba(0,0,0,0.95);
-      box-shadow:0 0 16px rgba(0,0,0,0.8);
-      font-size:12px;
-    }
-    #call-popup h2 { font-size:15px; margin-bottom:6px; }
-    #call-popup p  { margin-bottom:6px; }
-    .btn-row {
-      display:flex;
-      justify-content:flex-end;
-      gap:6px;
-      margin-top:8px;
-    }
-    .btn {
-      padding:6px 10px;
-      border:none;
-      border-radius:4px;
-      font-size:12px;
-      cursor:pointer;
-    }
-    .btn-primary { background:#5bff8a; color:#000; }
-    .btn-secondary { background:#555; color:#fff; }
-
-    /* CPR / Assessment / EMS actions overlays */
-    #cpr-modal, #assessment-modal, #ems-actions-overlay {
-      position:fixed;
-      top:0; left:0;
-      width:100%; height:100%;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      background:rgba(0,0,0,0.4);
-    }
-
-    .modal-content {
-      width:380px;
-      padding:16px 18px;
-      background:rgba(0,0,0,0.96);
-      border-radius:8px;
-      box-shadow:0 0 18px rgba(0,0,0,0.85);
-      font-size:12px;
-    }
-    .modal-content h2 { font-size:16px; margin-bottom:8px; }
-    .modal-content p  { margin-bottom:8px; }
-
-    #cpr-progress {
-      width:100%;
-      height:8px;
-      border-radius:4px;
-      background:rgba(255,255,255,0.1);
-      overflow:hidden;
-      margin-top:6px;
-    }
-    #cpr-progress-inner {
-      width:0%;
-      height:100%;
-      background:linear-gradient(90deg,#5bff8a,#58a6ff);
-    }
-    #cpr-rate {
-      margin-top:6px;
-      font-size:11px;
-      opacity:0.85;
-    }
-
-    table {
-      width:100%;
-      border-collapse:collapse;
-      margin-top:6px;
-    }
-    th, td {
-      border:1px solid rgba(255,255,255,0.1);
-      padding:4px 6px;
-      font-size:11px;
-      text-align:left;
-    }
-    th {
-      background:rgba(255,255,255,0.05);
-    }
-
-    /* EMS Actions (ALT menu) */
-    #ems-actions-overlay.hidden { display:none; }
-
-    #ems-actions-card {
-      width:320px;
-      max-width:90vw;
-      background:rgba(5,8,15,0.97);
-      border-radius:10px;
-      border:1px solid rgba(120,150,255,0.45);
-      box-shadow:0 18px 40px rgba(0,0,0,0.85);
-      padding:10px 12px;
-      font-size:12px;
-    }
-    #ems-actions-header {
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      margin-bottom:6px;
-      border-bottom:1px solid rgba(255,255,255,0.06);
-      padding-bottom:4px;
-    }
-    #ems-actions-header span {
-      font-weight:bold;
-      letter-spacing:0.04em;
-    }
-    #ems-actions-close {
-      border:none;
-      background:transparent;
-      color:#ccc;
-      font-size:11px;
-      cursor:pointer;
-    }
-    .ems-section {
-      margin-top:6px;
-    }
-    .ems-section-title {
-      font-size:11px;
-      text-transform:uppercase;
-      letter-spacing:0.08em;
-      color:#9aa4c3;
-      margin-bottom:3px;
-    }
-    .ems-btn {
-      width:100%;
-      text-align:left;
-      border:none;
-      border-radius:5px;
-      padding:5px 6px;
-      margin-bottom:3px;
-      cursor:pointer;
-      background:rgba(18,22,35,0.95);
-      color:#f5f5f5;
-      font-size:12px;
-    }
-    .ems-btn:hover {
-      background:rgba(60,90,180,0.95);
-    }
-    #ems-actions-footer {
-      margin-top:6px;
-      border-top:1px solid rgba(255,255,255,0.06);
-      padding-top:4px;
-      font-size:10px;
-      color:#9aa4c3;
-      text-align:right;
-    }
+    *{box-sizing:border-box;font-family:Inter,Arial,sans-serif} body{margin:0;overflow:hidden;background:transparent;color:#eef2ff}.hidden{display:none!important}
+    .panel{background:rgba(8,12,22,.92);border:1px solid rgba(115,140,210,.2);border-radius:16px;backdrop-filter:blur(4px)}
+    #status-card{position:fixed;right:22px;top:90px;width:360px;padding:14px 16px;z-index:10}
+    .card-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.pill{display:inline-block;padding:5px 10px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.05em}.pill.onduty{background:#1d6b43;color:#d9ffe9}.pill.calls{background:rgba(255,255,255,.08);color:#eef2ff}
+    .metric{display:grid;grid-template-columns:92px 1fr;gap:10px;align-items:start;margin-top:9px;font-size:13px}.metric .label{color:#9aa7c7;text-transform:uppercase;font-size:11px;letter-spacing:.08em}.metric .value{font-weight:700;line-height:1.35}
+    #notifications{position:fixed;top:26px;left:50%;transform:translateX(-50%);width:min(420px,92vw);display:flex;flex-direction:column;align-items:center;gap:8px;z-index:40;pointer-events:none}.toast{width:100%;max-width:420px}.toast{padding:10px 12px;border-radius:12px;background:rgba(5,8,15,.94);border-left:4px solid #67a0ff;font-size:13px}.toast.success{border-color:#3ddc84}.toast.warning{border-color:#ffd166}.toast.error{border-color:#ff5d73}.hud-editing{outline:2px dashed rgba(255,255,255,.45)!important;outline-offset:4px;cursor:move!important;pointer-events:auto!important}.hud-editing::after{content:attr(data-edit-label);position:absolute;top:-14px;left:0;padding:4px 8px;border-radius:999px;background:rgba(211,69,91,.95);color:#fff;font-size:11px;font-weight:800;letter-spacing:.06em}.hud-editing-empty{min-width:320px;min-height:54px;background:rgba(255,255,255,.05);border-radius:14px}.hud-editing-empty::before{content:'DRAG NOTIFICATIONS';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#dfe7ff;font-size:12px;font-weight:800;letter-spacing:.08em}#layout-mode{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;padding:12px 14px;background:rgba(8,12,22,.96);border:1px solid rgba(115,140,210,.22);border-radius:14px;z-index:120}#layout-mode button{border:none;border-radius:10px;padding:9px 12px;font-weight:800;cursor:pointer;background:#d3455b;color:#fff}#layout-mode button.secondary{background:rgba(255,255,255,.1);color:#eef2ff}
+    #call-popup{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:430px;padding:18px;z-index:50}.popup-title{font-size:18px;font-weight:800;margin-bottom:8px}.popup-body{font-size:13px;color:#d9e1f2;line-height:1.45}.btnrow{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}.btn{border:none;border-radius:10px;padding:10px 13px;font-weight:700;font-size:13px;cursor:pointer}.btn.primary{background:#d3455b;color:#fff}.btn.secondary{background:rgba(255,255,255,.09);color:#eef2ff}.btn.ghost{background:transparent;border:1px solid rgba(255,255,255,.13);color:#eef2ff}
+    .fullscreen{position:fixed;inset:0;background:rgba(2,4,8,.78);display:flex;align-items:center;justify-content:center;z-index:60}
+    .window{width:min(1120px,92vw);height:min(720px,88vh);padding:18px;display:grid;grid-template-columns:340px 1fr;gap:16px}
+    .sidebar,.content{padding:16px}.sidebar-title,.content-title{font-size:18px;font-weight:800;margin-bottom:8px}.subtle{color:#96a4c6;font-size:13px}
+    .call-list{margin-top:12px;display:flex;flex-direction:column;gap:10px;max-height:560px;overflow:auto;padding-right:4px}.call-item{padding:12px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.05);cursor:pointer}.call-item.selected{border-color:rgba(211,69,91,.9);background:rgba(211,69,91,.14)}.call-item .title{font-weight:800;font-size:14px}.call-item .meta{margin-top:6px;font-size:12px;color:#a5b2cf;display:flex;justify-content:space-between}
+    .detail-grid{display:grid;grid-template-columns:120px 1fr;gap:10px 14px;margin-top:16px;font-size:14px}.detail-label{color:#95a4c5;text-transform:uppercase;font-size:11px;letter-spacing:.08em}.detail-value{font-weight:700;line-height:1.4}
+    .responder-list{margin-top:12px;display:flex;flex-wrap:wrap;gap:8px}.chip{padding:7px 10px;border-radius:999px;background:rgba(255,255,255,.08);font-size:12px}
+    .action-grid{margin-top:18px;display:flex;flex-wrap:wrap;gap:10px}.action-btn{min-width:136px}
+    .status-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.status-pill{padding:8px 10px;border-radius:999px;background:rgba(255,255,255,.08);cursor:pointer;font-size:12px;font-weight:700}
+    .guide-wrap{width:min(980px,92vw);height:min(720px,88vh);padding:18px;display:grid;grid-template-columns:1.2fr .8fr;gap:16px}.guide-section{padding:16px}.guide-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}.guide-card{padding:14px;border-radius:14px;background:rgba(255,255,255,.04)}.guide-card h3{margin:0 0 8px 0;font-size:15px}.guide-card p{margin:0;color:#c8d3ea;line-height:1.45;font-size:13px}.bind-row{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.04);margin-top:10px}.bind-key{font-weight:800}.waiting{color:#ffd166}
+    #cpr-modal .inner,#assessment-modal .inner,#ems-actions-overlay .inner{width:min(420px,90vw);padding:18px}.inner h2{margin:0 0 10px 0}.inner p{color:#d9e1f2;font-size:13px}#cpr-progress{width:100%;height:10px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:10px}#cpr-progress-inner{height:100%;width:0;background:linear-gradient(90deg,#d3455b,#ff8d66)}
+    table{width:100%;border-collapse:collapse;margin-top:10px}td{padding:8px;border-bottom:1px solid rgba(255,255,255,.06);font-size:13px}
   </style>
 </head>
 <body>
-  <!-- HUD -->
-  <div id="hud" class="hidden">
-    <h1>EMS STATUS</h1>
-    <div class="row"><span class="label">Unit</span><span class="value" id="hud-unit">-</span></div>
-    <div class="row"><span class="label">Status</span><span class="value" id="hud-status">AVAILABLE</span></div>
-    <div class="row"><span class="label">Call</span><span class="value" id="hud-callid">None</span></div>
-    <div class="row"><span class="label">Type</span><span class="value" id="hud-calltype">-</span></div>
-    <div class="row"><span class="label">Location</span><span class="value" id="hud-location">-</span></div>
+  <div id="status-card" class="panel hidden">
+    <div class="card-top"><span id="status-duty-pill" class="pill onduty">ON DUTY</span><span id="status-callcount" class="pill calls">0 CALLS</span></div>
+    <div class="metric"><div class="label">Focus</div><div id="status-focus" class="value">Ready for next dispatch</div></div>
+    <div class="metric"><div class="label">Distance</div><div id="status-distance" class="value">—</div></div>
+    <div class="metric"><div class="label">Next Actions</div><div id="status-actions" class="value">E Accept • F4 Calls • F10 Guide</div></div>
   </div>
-
-  <!-- Notifications -->
   <div id="notifications"></div>
 
-  <!-- Call popup -->
-  <div id="call-popup" class="hidden">
-    <h2 id="call-title">New EMS Call</h2>
-    <p id="call-body"></p>
-    <p id="call-extra" style="font-size:11px;opacity:0.85;"></p>
-    <div class="btn-row">
-      <button id="btn-dismiss" class="btn btn-secondary">Ignore (X)</button>
-      <button id="btn-accept" class="btn btn-primary">Accept (E)</button>
-    </div>
+  <div id="call-popup" class="panel hidden">
+    <div id="call-title" class="popup-title">New EMS Call</div>
+    <div id="call-body" class="popup-body"></div>
+    <div id="call-extra" class="subtle" style="margin-top:8px"></div>
+    <div class="btnrow"><button id="btn-dismiss" class="btn secondary">Ignore</button><button id="btn-accept" class="btn primary">Join Call</button></div>
   </div>
 
-  <!-- CPR mini-game -->
-  <div id="cpr-modal" class="hidden">
-    <div class="modal-content">
-      <h2>CPR</h2>
-      <p>Click or press SPACE in time with high-quality CPR (100–120 bpm). Keep compressions steady!</p>
-      <p style="font-size:11px;opacity:0.9;">Good window: 0.45–0.6 seconds between compressions.</p>
-      <div id="cpr-progress"><div id="cpr-progress-inner"></div></div>
-      <div id="cpr-rate">Waiting for first compression...</div>
-      <div class="btn-row">
-        <button id="btn-cpr-cancel" class="btn btn-secondary">Stop</button>
+  <div id="dispatch-overlay" class="fullscreen hidden">
+    <div class="window panel">
+      <div class="sidebar panel">
+        <div class="sidebar-title">EMS Dispatch Board</div>
+        <div class="subtle">Open calls, responding crews, and live incident controls.</div>
+        <div id="call-list" class="call-list"></div>
       </div>
-    </div>
-  </div>
-
-  <!-- Assessment modal -->
-  <div id="assessment-modal" class="hidden">
-    <div class="modal-content">
-      <h2>Patient Assessment</h2>
-      <p id="assess-desc"></p>
-      <table>
-        <tbody id="assess-table"></tbody>
-      </table>
-      <div class="btn-row">
-        <button id="btn-assess-close" class="btn btn-primary">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- EMS Actions (ALT menu) -->
-  <div id="ems-actions-overlay" class="hidden">
-    <div id="ems-actions-card">
-      <div id="ems-actions-header">
-        <span>EMS Actions</span>
-        <button id="ems-actions-close">Close</button>
-      </div>
-      <div class="ems-section">
-        <div class="ems-section-title">Patient</div>
-        <button class="ems-btn" data-cmd="ems_assess">Assess patient (/ems_assess)</button>
-        <button class="ems-btn" data-cmd="ems_cpr">Start CPR (/ems_cpr)</button>
-      </div>
-      <div class="ems-section">
-        <div class="ems-section-title">Transport</div>
-        <button class="ems-btn" data-cmd="ems_stretcher">Spawn stretcher (/ems_stretcher)</button>
-        <button class="ems-btn" data-cmd="ems_loadpatient">Load patient onto stretcher (/ems_loadpatient)</button>
-        <button class="ems-btn" data-cmd="ems_load">Load stretcher into ambulance (/ems_load)</button>
-      </div>
-      <div class="ems-section">
-        <div class="ems-section-title">Status</div>
-        <button class="ems-btn" data-cmd="ems_status AVAILABLE">Status: AVAILABLE</button>
-        <button class="ems-btn" data-cmd="ems_status ONSCENE">Status: ONSCENE</button>
-        <button class="ems-btn" data-cmd="ems_status TRANSPORT">Status: TRANSPORT</button>
-        <button class="ems-btn" data-cmd="ems_status HOSPITAL">Status: HOSPITAL</button>
-      </div>
-      <div id="ems-actions-footer">
-        Hold / tap ALT to open • Az-Ambulance
+      <div class="content panel">
+        <div style="display:flex;justify-content:space-between;align-items:center"><div><div id="dispatch-title" class="content-title">No call selected</div><div id="dispatch-subtitle" class="subtle">Choose a call on the left.</div></div><button id="dispatch-close" class="btn ghost">Close</button></div>
+        <div id="dispatch-empty" class="subtle" style="margin-top:24px">No active EMS calls.</div>
+        <div id="dispatch-details" class="hidden">
+          <div class="detail-grid">
+            <div class="detail-label">Call ID</div><div id="detail-id" class="detail-value">-</div>
+            <div class="detail-label">Type</div><div id="detail-type" class="detail-value">-</div>
+            <div class="detail-label">Address</div><div id="detail-address" class="detail-value">-</div>
+            <div class="detail-label">Details</div><div id="detail-details" class="detail-value">-</div>
+            <div class="detail-label">Responders</div><div id="detail-responders-count" class="detail-value">0</div>
+          </div>
+          <div class="detail-label" style="margin-top:16px">Attached Units</div>
+          <div id="dispatch-responders" class="responder-list"></div>
+          <div class="status-row">
+            <div class="status-pill" data-status="ENROUTE">En Route</div>
+            <div class="status-pill" data-status="ONSCENE">On Scene</div>
+            <div class="status-pill" data-status="TRANSPORT">Transport</div>
+            <div class="status-pill" data-status="HOSPITAL">Hospital</div>
+            <div class="status-pill" data-status="AVAILABLE">Available</div>
+          </div>
+          <div class="action-grid">
+            <button id="action-gps" class="btn secondary action-btn">GPS</button>
+            <button id="action-join" class="btn primary action-btn">Join / Accept</button>
+            <button id="action-detach" class="btn secondary action-btn">Detach</button>
+            <button id="action-close" class="btn secondary action-btn">Close Call</button>
+            <button id="action-force-cancel" class="btn secondary action-btn">Force Cancel</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
-  <script>
-    const hud          = document.getElementById('hud');
-    const hudUnit      = document.getElementById('hud-unit');
-    const hudStatus    = document.getElementById('hud-status');
-    const hudCallId    = document.getElementById('hud-callid');
-    const hudCallType  = document.getElementById('hud-calltype');
-    const hudLocation  = document.getElementById('hud-location');
+  <div id="guide-overlay" class="fullscreen hidden">
+    <div class="guide-wrap panel">
+      <div class="guide-section panel">
+        <div style="display:flex;justify-content:space-between;align-items:center"><div><div class="content-title">EMS Guide</div><div class="subtle">Cleaner duty flow, shared dispatch, and on-screen rebinding.</div></div><button id="guide-close" class="btn ghost">Close</button></div>
+        <div class="guide-grid">
+          <div class="guide-card"><h3>1. Go On Duty</h3><p>Toggle duty before using the EMS systems. Once on duty you will receive live dispatch updates and can join open calls.</p></div>
+          <div class="guide-card"><h3>2. Open Dispatch</h3><p>Use the dispatch board to GPS, join, detach, close calls, force cancel bad incidents, and update your status. Other EMS can join the same call to assist.</p></div>
+          <div class="guide-card"><h3>3. Treat Patient</h3><p>Use assessment, CPR, and stretcher flow on scene. Cardiac calls still require effective CPR before transport.</p></div>
+          <div class="guide-card"><h3>4. Transport</h3><p>Load the patient, route to the nearest hospital, and complete the transport to clear the incident.</p></div>
+        </div>
+        <div class="btnrow" style="justify-content:flex-start;margin-top:18px"><button id="guide-open-board" class="btn primary">Open Dispatch Board</button><button id="guide-toggle-duty" class="btn secondary">Toggle Duty</button></div>
+      </div>
+      <div class="guide-section panel">
+        <div class="content-title">Keybinds</div>
+        <div class="subtle">Click rebind, then press a new key. This updates the local bind command for this resource.</div>
+        <div id="bind-list"></div>
+      </div>
+    </div>
+  </div>
 
-    const notifications = document.getElementById('notifications');
+  <div id="cpr-modal" class="fullscreen hidden"><div class="inner panel"><h2>CPR</h2><p>Click or press SPACE in rhythm.</p><div id="cpr-progress"><div id="cpr-progress-inner"></div></div><div id="cpr-rate" style="margin-top:10px">Waiting...</div><div class="btnrow"><button id="btn-cpr-cancel" class="btn secondary">Stop</button></div></div></div>
+  <div id="assessment-modal" class="fullscreen hidden"><div class="inner panel"><h2>Patient Assessment</h2><p id="assess-desc"></p><table><tbody id="assess-table"></tbody></table><div class="btnrow"><button id="btn-assess-close" class="btn primary">Close</button></div></div></div>
+  <div id="ems-actions-overlay" class="fullscreen hidden"><div class="inner panel"><h2>EMS Actions</h2><p>Select a quick action.</p><div class="action-grid" id="ems-action-buttons"></div><div class="btnrow"><button id="ems-actions-close" class="btn secondary">Close</button></div></div></div>
 
-    const callPopup  = document.getElementById('call-popup');
-    const callTitle  = document.getElementById('call-title');
-    const callBody   = document.getElementById('call-body');
-    const callExtra  = document.getElementById('call-extra');
-    const btnAccept  = document.getElementById('btn-accept');
-    const btnDismiss = document.getElementById('btn-dismiss');
 
-    const cprModal    = document.getElementById('cpr-modal');
-    const cprProgress = document.getElementById('cpr-progress-inner');
-    const cprRate     = document.getElementById('cpr-rate');
-    const btnCprCancel = document.getElementById('btn-cpr-cancel');
+  <div id="layout-mode" class="hidden">
+    <span>EMS HUD LAYOUT MODE — drag the HUD panels, then</span>
+    <button id="layout-save">Save</button>
+    <button id="layout-cancel" class="secondary">Cancel</button>
+  </div>
 
-    const assessModal = document.getElementById('assessment-modal');
-    const assessDesc  = document.getElementById('assess-desc');
-    const assessTable = document.getElementById('assess-table');
-    const btnAssessClose = document.getElementById('btn-assess-close');
+<script>
+const $ = (id)=>document.getElementById(id);
+const hud=$('status-card'), notifications=$('notifications'), callPopup=$('call-popup');
+const layoutBar=$('layout-mode'), layoutSaveBtn=$('layout-save'), layoutCancelBtn=$('layout-cancel');
+const bindTargets={duty:'Duty Toggle',calls:'Dispatch Board',accept:'Accept / Join Call',cpr:'CPR',assess:'Assessment',actions:'Actions Menu',guide:'Guide'};
+let pendingCall=null, dispatchCalls=[], selectedCallId=null, waitingBindTarget=null;
+let layoutEditing=false, hudLayout=null, originalLayoutForEdit=null, dragState=null;
+function nui(event,data){const res=(typeof GetParentResourceName==='function'&&GetParentResourceName())||'Az-Ambulance';fetch(`https://${res}/${event}`,{method:'POST',headers:{'Content-Type':'application/json; charset=UTF-8'},body:JSON.stringify(data||{})}).catch(()=>{});}
 
-    const emsOverlay  = document.getElementById('ems-actions-overlay');
-    const emsCloseBtn = document.getElementById('ems-actions-close');
+function applyLayout(layout){
+  hudLayout=layout||null;
+  hud.style.right=''; hud.style.left=''; hud.style.top='';
+  notifications.style.left='50%'; notifications.style.right=''; notifications.style.top='26px'; notifications.style.transform='translateX(-50%)';
+  if(!layout) return;
+  if(layout.status){
+    hud.style.right='auto';
+    hud.style.left=(layout.status.x||0)+'vw';
+    hud.style.top=(layout.status.y||0)+'vh';
+    if(layout.status.w) hud.style.width=layout.status.w+'vw';
+  }
+  if(layout.notifications){
+    notifications.style.left=(layout.notifications.x||50)+'vw';
+    notifications.style.top=(layout.notifications.y||0)+'vh';
+    notifications.style.transform='translateX(-50%)';
+    if(layout.notifications.w) notifications.style.width=layout.notifications.w+'vw';
+  }
+}
 
-    let pendingCall = null;
+function elementRectToLayout(el, centered){
+  const rect=el.getBoundingClientRect();
+  const x=((rect.left + (centered ? rect.width/2 : 0))/window.innerWidth)*100;
+  const y=(rect.top/window.innerHeight)*100;
+  const w=(rect.width/window.innerWidth)*100;
+  return {x,y,w};
+}
 
-    function nui(event, data) {
-      fetch('https://Az-Ambulance/' + event, {
-        method:'POST',
-        headers:{'Content-Type':'application/json; charset=UTF-8'},
-        body:JSON.stringify(data || {})
-      }).catch(() => {});
-    }
+function buildCurrentLayout(){
+  return {
+    status: elementRectToLayout(hud,false),
+    notifications: elementRectToLayout(notifications,true)
+  };
+}
 
-    function showToast(kind, text, durationMs) {
-      const div = document.createElement('div');
-      div.className = 'toast ' + (kind || 'info');
-      div.textContent = text || '';
-      notifications.appendChild(div);
-      const ms = durationMs || 4000;
-      setTimeout(() => {
-        if (div.parentNode) div.parentNode.removeChild(div);
-      }, ms);
-    }
+function enterLayoutMode(){
+  if(layoutEditing) return;
+  layoutEditing=true;
+  originalLayoutForEdit=hudLayout?JSON.parse(JSON.stringify(hudLayout)):null;
+  if(!hudLayout){
+    hudLayout=buildCurrentLayout();
+  }
+  layoutBar.classList.remove('hidden');
+  hud.classList.remove('hidden');
+  hud.classList.add('hud-editing');
+  hud.dataset.editLabel='DRAG STATUS CARD';
+  notifications.classList.add('hud-editing','hud-editing-empty');
+  notifications.dataset.editLabel='DRAG NOTIFICATIONS';
+}
 
-    function updateHUDMsg(data) {
-      if (!data.onDuty) {
-        hud.classList.add('hidden');
-        return;
-      }
-      hud.classList.remove('hidden');
-      hudUnit.textContent   = 'Unit ' + (data.unit || '');
-      hudStatus.textContent = data.status || 'AVAILABLE';
+function exitLayoutMode(revert){
+  if(!layoutEditing) return;
+  layoutEditing=false;
+  dragState=null;
+  layoutBar.classList.add('hidden');
+  hud.classList.remove('hud-editing');
+  notifications.classList.remove('hud-editing','hud-editing-empty');
+  delete hud.dataset.editLabel;
+  delete notifications.dataset.editLabel;
+  if(revert){
+    applyLayout(originalLayoutForEdit);
+  } else if(hudLayout){
+    applyLayout(hudLayout);
+  }
+}
 
-      if (data.callInfo) {
-        hudCallId.textContent   = '#' + data.callInfo.id;
-        hudCallType.textContent = data.callInfo.type || '-';
-        hudLocation.textContent = data.callInfo.address || '-';
-      } else {
-        hudCallId.textContent   = 'None';
-        hudCallType.textContent = '-';
-        hudLocation.textContent = '-';
-      }
-    }
+function beginDrag(e, element, options){
+  if(!layoutEditing || e.button!==0) return;
+  e.preventDefault();
+  const rect=element.getBoundingClientRect();
+  dragState={
+    element,
+    offsetX:e.clientX-rect.left,
+    offsetY:e.clientY-rect.top,
+    centered:!!(options&&options.centered)
+  };
+}
 
-    /* call popup buttons */
-    btnAccept.addEventListener('click', function () {
-      if (!pendingCall) return;
-      nui('accept_call', {id: pendingCall.id});
-    });
-
-    btnDismiss.addEventListener('click', function () {
-      pendingCall = null;
-      callPopup.classList.add('hidden');
-      nui('dismiss_call', {});
-    });
-
-    /* CPR mini-game */
-    let cprRunning    = false;
-    let cprStartTime  = 0;
-    let cprDuration   = 0;
-    let cprGoodMin    = 450;
-    let cprGoodMax    = 600;
-    let cprTimer      = null;
-    let lastPressTime = null;
-    let totalPress    = 0;
-    let goodPress     = 0;
-
-    function registerCompression() {
-      if (!cprRunning) return;
-      const now = performance.now();
-      if (lastPressTime !== null) {
-        const diff = now - lastPressTime;
-        if (diff >= cprGoodMin && diff <= cprGoodMax) {
-          goodPress++;
-          cprRate.textContent = 'Good! ' + diff.toFixed(0) + ' ms between compressions.';
-        } else {
-          cprRate.textContent = 'Off rhythm (' + diff.toFixed(0) + ' ms). Aim for 0.45–0.6 s.';
-        }
-      } else {
-        cprRate.textContent = 'Keep that rhythm going...';
-      }
-      lastPressTime = now;
-      totalPress++;
-    }
-
-    cprModal.addEventListener('mousedown', function () {
-      registerCompression();
-    });
-
-    window.addEventListener('keydown', function (e) {
-      if (!cprModal.classList.contains('hidden') && e.code === 'Space') {
-        registerCompression();
-      }
-    });
-
-    btnCprCancel.addEventListener('click', function () {
-      if (!cprRunning) return;
-      cprRunning = false;
-      cprModal.classList.add('hidden');
-      if (cprTimer) { clearInterval(cprTimer); cprTimer = null; }
-      nui('cpr_cancel', {});
-    });
-
-    function startCPRUI(data) {
-      cprDuration  = (data.duration || 30) * 1000;
-      cprGoodMin   = data.goodMinMs || 450;
-      cprGoodMax   = data.goodMaxMs || 600;
-      cprRunning   = true;
-      cprStartTime = performance.now();
-      lastPressTime = null;
-      totalPress   = 0;
-      goodPress    = 0;
-      cprProgress.style.width = '0%';
-      cprRate.textContent = 'Start compressions – click or press SPACE.';
-      cprModal.classList.remove('hidden');
-
-      if (cprTimer) clearInterval(cprTimer);
-      cprTimer = setInterval(() => {
-        const now = performance.now();
-        const elapsed = now - cprStartTime;
-        const pct = Math.min(100, (elapsed / cprDuration) * 100);
-        cprProgress.style.width = pct + '%';
-        if (elapsed >= cprDuration) {
-          cprRunning = false;
-          cprModal.classList.add('hidden');
-          clearInterval(cprTimer);
-          cprTimer = null;
-          nui('cpr_finish', {good: goodPress, total: totalPress});
-        }
-      }, 50);
-    }
-
-    /* Assessment */
-    btnAssessClose.addEventListener('click', function () {
-      assessModal.classList.add('hidden');
-      nui('assessment_close', {});
-    });
-
-    function openAssessment(vitals) {
-      assessTable.innerHTML = '';
-      assessDesc.textContent = vitals.description || '';
-      function row(label, value) {
-        const tr = document.createElement('tr');
-        const td1 = document.createElement('td');
-        const td2 = document.createElement('td');
-        td1.textContent = label;
-        td2.textContent = value;
-        tr.appendChild(td1); tr.appendChild(td2);
-        assessTable.appendChild(tr);
-      }
-      row('Heart rate', (vitals.heartRate || '?') + ' bpm');
-      row('Blood pressure', (vitals.systolic || '?') + '/' + (vitals.diastolic || '?') + ' mmHg');
-      row('Respiratory rate', (vitals.respRate || '?') + ' /min');
-      row('SpO2', (vitals.spo2 || '?') + ' %');
-      row('GCS', vitals.gcs || '?');
-      row('State', vitals.state || '?');
-      assessModal.classList.remove('hidden');
-    }
-
-    /* EMS Actions helpers */
-    function openEMSMenu() {
-      emsOverlay.classList.remove('hidden');
-    }
-    function closeEMSMenu() {
-      emsOverlay.classList.add('hidden');
-    }
-
-    emsCloseBtn.addEventListener('click', function () {
-      closeEMSMenu();
-      nui('ems_actions_close', {});
-    });
-
-    document.querySelectorAll('.ems-btn').forEach(btn => {
-      btn.addEventListener('click', function () {
-        const cmd = this.getAttribute('data-cmd');
-        if (!cmd) return;
-        fetch('https://Az-Ambulance/ems_action', {
-          method:'POST',
-          headers:{'Content-Type':'application/json; charset=UTF-8'},
-          body:JSON.stringify({cmd: cmd})
-        }).catch(() => {});
-        closeEMSMenu();
-      });
-    });
-
-    /* message handler from Lua */
-    window.addEventListener('message', function (event) {
-      const data = event.data || {};
-      switch (data.action) {
-        case 'hud_update':
-          updateHUDMsg(data);
-          break;
-        case 'hud_hide':
-          hud.classList.add('hidden');
-          break;
-        case 'notify':
-          showToast(data.kind || 'info', data.text || '', data.duration);
-          break;
-        case 'call_popup':
-          pendingCall = data.call;
-          if (!pendingCall) return;
-          callTitle.textContent = data.call.title || 'New EMS Call';
-          callBody.textContent  = data.call.details || '';
-          callExtra.textContent = 'Call #' + data.call.id + ' | ' + (data.call.address || '');
-          callPopup.classList.remove('hidden');
-          break;
-        case 'call_popup_hide':
-          pendingCall = null;
-          callPopup.classList.add('hidden');
-          break;
-        case 'cpr_start':
-          startCPRUI(data);
-          break;
-        case 'assessment_open':
-          openAssessment(data.vitals || {});
-          break;
-        case 'assessment_close':
-          assessModal.classList.add('hidden');
-          break;
-        case 'ems_actions_open':
-          openEMSMenu();
-          break;
-        case 'ems_actions_close':
-          closeEMSMenu();
-          break;
-      }
-    });
-    $('#btnDeny').on('click', function () {
-        $.post('https://Az-Ambulance/deny_call', JSON.stringify({ id: currentCall.id }));
-    });
-
-    /* initial hide */
-    hud.classList.add('hidden');
-    callPopup.classList.add('hidden');
-    cprModal.classList.add('hidden');
-    assessModal.classList.add('hidden');
-    emsOverlay.classList.add('hidden');
-  </script>
+window.addEventListener('mousemove', (e)=>{
+  if(!dragState) return;
+  e.preventDefault();
+  const rect=dragState.element.getBoundingClientRect();
+  let left=e.clientX-dragState.offsetX;
+  let top=e.clientY-dragState.offsetY;
+  left=Math.max(0, Math.min(window.innerWidth-rect.width, left));
+  top=Math.max(0, Math.min(window.innerHeight-rect.height, top));
+  if(dragState.element===hud){
+    hud.style.right='auto';
+    hud.style.left=(left/window.innerWidth)*100+'vw';
+    hud.style.top=(top/window.innerHeight)*100+'vh';
+  } else if(dragState.element===notifications){
+    const center=(left+rect.width/2);
+    notifications.style.left=(center/window.innerWidth)*100+'vw';
+    notifications.style.top=(top/window.innerHeight)*100+'vh';
+    notifications.style.transform='translateX(-50%)';
+  }
+});
+window.addEventListener('mouseup', ()=>{ dragState=null; });
+hud.addEventListener('mousedown', (e)=>beginDrag(e,hud,{centered:false}));
+notifications.addEventListener('mousedown', (e)=>beginDrag(e,notifications,{centered:true}));
+layoutSaveBtn.addEventListener('click', ()=>{ const layout=buildCurrentLayout(); hudLayout=layout; nui('layout_saved',{layout}); exitLayoutMode(false); });
+layoutCancelBtn.addEventListener('click', ()=>{ nui('layout_cancel',{}); exitLayoutMode(true); });
+function showToast(kind,text,durationMs){const div=document.createElement('div');div.className='toast '+(kind||'info');div.textContent=text||'';notifications.appendChild(div);setTimeout(()=>div.remove(),durationMs||4000);}
+function updateHud(data){hud.classList.remove('hidden');const dutyPill=$('status-duty-pill');if(dutyPill){dutyPill.textContent=data.onDuty?'ON DUTY':'OFF DUTY';dutyPill.classList.toggle('onduty',!!data.onDuty);dutyPill.classList.toggle('offduty',!data.onDuty);}$('status-callcount').textContent=(data.callCount||0)+' CALLS';$('status-focus').textContent=data.focus||(data.onDuty?'Ready for next dispatch':'Stand by at a station');$('status-distance').textContent=data.distance||'—';$('status-actions').textContent=data.nextActions||'';}
+function renderCallList(){const root=$('call-list');root.innerHTML='';if(!dispatchCalls.length){root.innerHTML='<div class="subtle">No active EMS calls.</div>';return;}dispatchCalls.forEach(call=>{const div=document.createElement('div');div.className='call-item'+(Number(selectedCallId)===Number(call.id)?' selected':'');div.innerHTML=`<div class="title">${call.title||'EMS Call'} #${call.id}</div><div class="meta"><span>${call.address||'Unknown address'}</span><span>${call.responderCount||0} units</span></div>`;div.onclick=()=>{selectedCallId=call.id;nui('dispatch_select',{id:call.id});renderDispatchDetail();renderCallList();};root.appendChild(div);});}
+function selectedCall(){return dispatchCalls.find(c=>Number(c.id)===Number(selectedCallId))||dispatchCalls[0]||null;}
+function renderDispatchDetail(){const call=selectedCall();$('dispatch-empty').classList.toggle('hidden',!!call);$('dispatch-details').classList.toggle('hidden',!call);if(!call)return;$('dispatch-title').textContent=(call.title||'EMS Call')+' #'+call.id;$('dispatch-subtitle').textContent=call.myAttached?'You are attached to this incident.':'Open incident';$('detail-id').textContent='#'+call.id;$('detail-type').textContent=call.type||'-';$('detail-address').textContent=call.address||'-';$('detail-details').textContent=call.details||'-';$('detail-responders-count').textContent=String(call.responderCount||0);const rr=$('dispatch-responders');rr.innerHTML='';(call.responders||[]).forEach(r=>{const chip=document.createElement('div');chip.className='chip';chip.textContent=`${r.label} • ${r.status||'ENROUTE'}`;rr.appendChild(chip);});$('action-join').textContent=call.myAttached?'Re-join / Refresh':'Join / Accept';$('action-detach').disabled=!call.myAttached;}
+function renderGuideBindings(bindings){const root=$('bind-list');root.innerHTML='';Object.entries(bindTargets).forEach(([key,label])=>{const row=document.createElement('div');row.className='bind-row';row.innerHTML=`<div><div style="font-weight:800">${label}</div><div class="subtle">Current: <span class="bind-key">${(bindings&&bindings[key])||'—'}</span></div></div><button class="btn secondary">Rebind</button>`;row.querySelector('button').onclick=()=>{waitingBindTarget=key;row.querySelector('.bind-key').textContent='Press a key...';row.querySelector('.bind-key').classList.add('waiting');};root.appendChild(row);});}
+$('btn-accept').onclick=()=>{if(pendingCall)nui('accept_call',{id:pendingCall.id});};$('btn-dismiss').onclick=()=>{pendingCall=null;callPopup.classList.add('hidden');nui('dismiss_call',{});};
+$('dispatch-close').onclick=()=>nui('dispatch_close',{});$('guide-close').onclick=()=>nui('guide_close',{});$('guide-open-board').onclick=()=>nui('guide_action',{actionName:'board'});$('guide-toggle-duty').onclick=()=>nui('guide_action',{actionName:'duty'});
+$('action-gps').onclick=()=>{const c=selectedCall();if(c)nui('dispatch_action',{actionName:'gps',id:c.id});};$('action-join').onclick=()=>{const c=selectedCall();if(c)nui('dispatch_action',{actionName:'join',id:c.id});};$('action-detach').onclick=()=>{const c=selectedCall();if(c)nui('dispatch_action',{actionName:'detach',id:c.id});};$('action-close').onclick=()=>{const c=selectedCall();if(c)nui('dispatch_action',{actionName:'close',id:c.id});};$('action-force-cancel').onclick=()=>{const c=selectedCall();if(c)nui('dispatch_action',{actionName:'force_cancel',id:c.id});};document.querySelectorAll('.status-pill').forEach(el=>el.onclick=()=>{const c=selectedCall();if(c)nui('dispatch_action',{actionName:'status',id:c.id,status:el.dataset.status});});
+const emsActions=[['ems_assess','Assess patient'],['ems_cpr','Start CPR'],['ems_stretcher','Spawn stretcher'],['ems_loadpatient','Load patient'],['ems_load','Load into ambulance'],['ems_status AVAILABLE','Status: Available'],['ems_status ONSCENE','Status: On Scene'],['ems_status TRANSPORT','Status: Transport'],['ems_status HOSPITAL','Status: Hospital']];
+const ea=$('ems-action-buttons');emsActions.forEach(([cmd,label])=>{const b=document.createElement('button');b.className='btn secondary action-btn';b.textContent=label;b.onclick=()=>{fetch('https://Az-Ambulance/ems_action',{method:'POST',headers:{'Content-Type':'application/json; charset=UTF-8'},body:JSON.stringify({cmd})}).catch(()=>{});};ea.appendChild(b);});$('ems-actions-close').onclick=()=>nui('ems_actions_close',{});
+let cprRunning=false,cprStartTime=0,cprDuration=0,cprGoodMin=450,cprGoodMax=600,cprTimer=null,lastPressTime=null,totalPress=0,goodPress=0;
+function registerCompression(){if(!cprRunning)return;const now=performance.now();if(lastPressTime!==null){const diff=now-lastPressTime;if(diff>=cprGoodMin&&diff<=cprGoodMax){goodPress++;$('cpr-rate').textContent='Good rhythm: '+diff.toFixed(0)+' ms';}else{$('cpr-rate').textContent='Off rhythm: '+diff.toFixed(0)+' ms';}}else{$('cpr-rate').textContent='Keep rhythm steady...';}lastPressTime=now;totalPress++;}
+$('cpr-modal').addEventListener('mousedown',registerCompression);window.addEventListener('keydown',e=>{if(waitingBindTarget){e.preventDefault();const key=(e.key||'').toLowerCase();if(key){nui('guide_action',{actionName:'rebind',target:waitingBindTarget,key});waitingBindTarget=null;}return;}if(!$('cpr-modal').classList.contains('hidden')&&e.code==='Space')registerCompression();const key=(e.key||'').toLowerCase();const code=(e.code||'').toLowerCase();const acceptHotkey=(key==='e'||code==='keye'||code==='numpadenter'||key==='enter');if(acceptHotkey){if(!$('dispatch-overlay').classList.contains('hidden')){const c=selectedCall();if(c){e.preventDefault();nui('dispatch_action',{actionName:'join',id:c.id});}}else if(!callPopup.classList.contains('hidden')&&pendingCall){e.preventDefault();nui('accept_call',{id:pendingCall.id});}}});$('btn-cpr-cancel').onclick=()=>{if(!cprRunning)return;cprRunning=false;$('cpr-modal').classList.add('hidden');if(cprTimer)clearInterval(cprTimer);nui('cpr_cancel',{});};
+function startCPRUI(data){cprDuration=(data.duration||30)*1000;cprGoodMin=data.goodMinMs||450;cprGoodMax=data.goodMaxMs||600;cprRunning=true;cprStartTime=performance.now();lastPressTime=null;totalPress=0;goodPress=0;$('cpr-progress-inner').style.width='0%';$('cpr-rate').textContent='Start compressions';$('cpr-modal').classList.remove('hidden');if(cprTimer)clearInterval(cprTimer);cprTimer=setInterval(()=>{const pct=Math.min(100,((performance.now()-cprStartTime)/cprDuration)*100);$('cpr-progress-inner').style.width=pct+'%';if(pct>=100){cprRunning=false;$('cpr-modal').classList.add('hidden');clearInterval(cprTimer);nui('cpr_finish',{good:goodPress,total:totalPress});}},50);}
+function openAssessment(vitals){$('assess-table').innerHTML='';$('assess-desc').textContent=vitals.description||'';[['Heart rate',(vitals.heartRate||'?')+' bpm'],['Blood pressure',(vitals.systolic||'?')+'/'+(vitals.diastolic||'?')],['Resp rate',(vitals.respRate||'?')+'/min'],['SpO2',(vitals.spo2||'?')+' %'],['GCS',vitals.gcs||'?'],['State',vitals.state||'?']].forEach(([l,v])=>{const tr=document.createElement('tr');tr.innerHTML=`<td>${l}</td><td>${v}</td>`;$('assess-table').appendChild(tr);});$('assessment-modal').classList.remove('hidden');}$('btn-assess-close').onclick=()=>nui('assessment_close',{});
+window.addEventListener('message',event=>{const data=event.data||{};switch(data.action){case 'hud_update':updateHud(data);break;case 'hud_hide':hud.classList.add('hidden');break;case 'notify':showToast(data.kind||'info',data.text||'',data.duration);break;case 'call_popup':pendingCall=data.call;if(!pendingCall)return;$('call-title').textContent=data.call.title||'New EMS Call';$('call-body').textContent=data.call.details||'';$('call-extra').textContent='Call #'+data.call.id+' • '+(data.call.address||'');callPopup.classList.remove('hidden');break;case 'call_popup_hide':pendingCall=null;callPopup.classList.add('hidden');break;case 'dispatch_data':dispatchCalls=data.calls||[];selectedCallId=data.selectedCallId||selectedCallId;renderCallList();renderDispatchDetail();break;case 'dispatch_open':$('dispatch-overlay').classList.remove('hidden');break;case 'dispatch_close':$('dispatch-overlay').classList.add('hidden');break;case 'layout_apply':applyLayout(data.layout||null);break;case 'layout_edit':enterLayoutMode();break;case 'layout_force_cancel':exitLayoutMode(true);break;case 'guide_open':renderGuideBindings(data.bindings||{});$('guide-overlay').classList.remove('hidden');break;case 'guide_close':$('guide-overlay').classList.add('hidden');break;case 'cpr_start':startCPRUI(data);break;case 'assessment_open':openAssessment(data.vitals||{});break;case 'assessment_close':$('assessment-modal').classList.add('hidden');break;case 'ems_actions_open':$('ems-actions-overlay').classList.remove('hidden');break;case 'ems_actions_close':$('ems-actions-overlay').classList.add('hidden');break;}});
+</script>
 </body>
 </html>
